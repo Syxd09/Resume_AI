@@ -7,24 +7,22 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String        @id @default(cuid())
   name          String?
-  email         String?   @unique
+  email         String?       @unique
   emailVerified DateTime?
   image         String?
   password      String?
   phone         String?
   address       String?
-  credits       Int       @default(10)
-  
+  credits       Int           @default(10)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
   accounts      Account[]
+  atsScores     AtsScore[]
+  resumes       Resume[]
   sessions      Session[]
   transactions  Transaction[]
-  resumes       Resume[]
-  atsScores     AtsScore[]
-
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
 }
 
 model Account {
@@ -33,15 +31,14 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
   @@index([userId])
@@ -72,24 +69,21 @@ model Transaction {
   type        String
   description String
   createdAt   DateTime @default(now())
-
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
 model Resume {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   userId    String
-  title     String   @default("My Resume")
+  title     String     @default("My Resume")
   data      Json
-  markdown  String?  @db.Text
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  markdown  String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   atsScores AtsScore[]
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -99,17 +93,15 @@ model AtsScore {
   resumeId    String
   userId      String
   score       Int
-  jdSnippet   String?  @db.Text
+  jdSnippet   String?
   matched     Json?
   missing     Json?
   suggestions Json?
   fullResult  Json?
   createdAt   DateTime @default(now())
-
   resume      Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([resumeId])
   @@index([userId])
 }
-

@@ -6,8 +6,9 @@ export async function POST(req: Request) {
     try {
         console.log('[Register] Starting registration process...');
 
-        const { name, email, password } = await req.json();
-        console.log('[Register] Request body parsed, email:', email);
+        const { name, email: rawEmail, password } = await req.json();
+        const email = rawEmail?.toLowerCase().trim();
+        console.log('[Register] Request email normalized:', email);
 
         if (!email || !password) {
             console.log('[Register] Validation failed: missing email or password');
