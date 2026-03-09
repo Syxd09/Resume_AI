@@ -1,0 +1,45 @@
+name: ORBITAL CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    name: Build & Validate
+    runs-on: ubuntu-latest
+
+    # Provide necessary environment variables for Next.js build and Prisma generation
+    env:
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
+      NEXTAUTH_URL: "http://localhost:3000"
+      NEXTAUTH_SECRET: "ci_dummy_secret_for_build"
+      OPENAI_API_KEY: "sk-ci_dummy_key_for_build"
+      RAZORPAY_KEY_ID: "rzp_test_ci"
+      RAZORPAY_KEY_SECRET: "rzp_test_secret_ci"
+
+    steps:
+      - name: 🚀 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js v20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Install Dependencies
+        run: npm ci
+
+      - name: 🔍 Linting
+        run: npm run lint
+
+      - name: 🛠️ Type Check
+        run: npx tsc --noEmit
+
+      - name: 🏗️ Build Target (Next.js)
+        run: npm run build
