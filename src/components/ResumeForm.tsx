@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import {
   Send, Upload, Sparkles, ChevronRight, ChevronLeft, Check, Loader2, RefreshCcw,
   User, Target, Code, Briefcase, Globe, GraduationCap, X, Plus, Award, Languages, FileText,
-  BarChart3, AlertTriangle, CheckCircle2, Shield, Zap, ChevronDown, ChevronUp, Lightbulb, Info
+  BarChart3, AlertTriangle, CheckCircle2, Shield, Zap, ChevronDown, ChevronUp, Lightbulb, Info, Save
 } from 'lucide-react';
 import { ResumeData, ResumeTemplate, WorkEntry } from '@/types/resume';
 import { useResumeStore } from '@/store/useResumeStore';
