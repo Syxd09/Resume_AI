@@ -4,13 +4,17 @@ import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
 
-const connectionString = process.env.DATABASE_URL;
+const connectionString = process.env.DATABASE_URL?.trim();
 
 if (!connectionString) {
     if (process.env.NODE_ENV === 'production') {
         throw new Error('CRITICAL: DATABASE_URL is missing in production environment!');
     }
     console.warn('[Prisma] WARNING: DATABASE_URL is missing, falling back to local dev port 5434.');
+}
+
+if (connectionString?.includes('[YOUR-PASSWORD]')) {
+    console.error('[Prisma] CRITICAL: DATABASE_URL contains unreplaced "[YOUR-PASSWORD]" placeholder!');
 }
 
 // Diagnostic Log (Masked)
@@ -21,11 +25,13 @@ try {
     } else {
         console.log('[Prisma] No connection string found, using local fallback host.');
     }
-} catch (e) {
-    console.log('[Prisma] Connection string present but malformed.');
+} catch (e: any) {
+    console.error('[Prisma] Connection string present but malformed:', e.message);
 }
 
-const finalConnectionString = connectionString || 'postgresql://postgres:password@localhost:5434/resumebuilder';
+const finalConnectionString = (process.env.NODE_ENV === 'production' && connectionString)
+    ? connectionString
+    : (connectionString || 'postgresql://postgres:password@localhost:5434/resumebuilder');
 
 const globalForPrisma = globalThis as unknown as {
     prisma: PrismaClient | undefined;
