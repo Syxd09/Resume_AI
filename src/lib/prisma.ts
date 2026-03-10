@@ -4,7 +4,28 @@ import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/resumebuilder';
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('CRITICAL: DATABASE_URL is missing in production environment!');
+    }
+    console.warn('[Prisma] WARNING: DATABASE_URL is missing, falling back to local dev port 5434.');
+}
+
+// Diagnostic Log (Masked)
+try {
+    if (connectionString) {
+        const url = new URL(connectionString);
+        console.log(`[Prisma] Initializing with DB Host: ${url.host} (Port: ${url.port || 'default'})`);
+    } else {
+        console.log('[Prisma] No connection string found, using local fallback host.');
+    }
+} catch (e) {
+    console.log('[Prisma] Connection string present but malformed.');
+}
+
+const finalConnectionString = connectionString || 'postgresql://postgres:password@localhost:5434/resumebuilder';
 
 const globalForPrisma = globalThis as unknown as {
     prisma: PrismaClient | undefined;
@@ -15,16 +36,16 @@ function createPrismaClient() {
 
     // The pg module's connection string parser overrides explicit ssl options if sslmode is in the query.
     // We remove it here so our explicit sslOptions take precedence.
-    let finalConnectionString = connectionString;
+    let connectionUrlForParsing = finalConnectionString;
     try {
-        const urlArgs = new URL(finalConnectionString);
+        const urlArgs = new URL(connectionUrlForParsing);
         urlArgs.searchParams.delete('sslmode');
-        finalConnectionString = urlArgs.toString();
+        connectionUrlForParsing = urlArgs.toString();
     } catch (e) {
         // Ignore URL parsing errors
     }
 
-    if (process.env.NODE_ENV === 'production' || connectionString.includes('aivencloud.com')) {
+    if (process.env.NODE_ENV === 'production' || connectionUrlForParsing.includes('aivencloud.com') || connectionUrlForParsing.includes('supabase.co')) {
         try {
             if (process.env.DATABASE_CA_CERT) {
                 // If provided via environment variable (useful for Vercel/Netlify)
@@ -54,7 +75,7 @@ function createPrismaClient() {
     }
 
     const pool = new pg.Pool({
-        connectionString: finalConnectionString,
+        connectionString: connectionUrlForParsing,
         ssl: sslOptions
     });
     const adapter = new PrismaPg(pool);
