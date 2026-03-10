@@ -111,6 +111,7 @@ if (process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET) {
 
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(prisma) as Exclude<NextAuthOptions['adapter'], undefined>,
+    secret: process.env.NEXTAUTH_SECRET,
     session: { strategy: 'jwt' },
     pages: { signIn: '/auth/signin' },
     providers,
