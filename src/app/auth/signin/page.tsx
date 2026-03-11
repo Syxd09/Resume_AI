@@ -5,6 +5,8 @@ import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Mail, Lock, Loader2, Sparkles, ArrowRight, User, Github, Linkedin, ChevronLeft, Orbit } from 'lucide-react';
 import { useMousePosition } from '@/hooks/useMousePosition';
+import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider } from 'firebase/auth';
+import { app } from '@/lib/firebase';
 import Link from 'next/link';
 
 type Tab = 'signin' | 'register';
@@ -20,6 +22,33 @@ export default function AuthPage() {
   const router = useRouter();
   const mouse = useMousePosition();
   const bgRef = useRef<HTMLDivElement>(null);
+
+  // Handle redirect result when returning from Google sign-in
+  useEffect(() => {
+    const auth = getAuth(app);
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (result?.user) {
+          setLoading(true);
+          const idToken = await result.user.getIdToken();
+          const signInResult = await signIn('firebase', {
+            redirect: false,
+            firebaseToken: idToken,
+          });
+          setLoading(false);
+          if (signInResult?.error) {
+            setError('Google Authentication failed. Please try again.');
+          } else {
+            router.push('/dashboard');
+            router.refresh();
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Redirect result error:', err);
+        setError(err.message || 'Authentication failed.');
+      });
+  }, [router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,8 +121,23 @@ export default function AuthPage() {
     }
   };
 
-  const handleOAuth = (provider: string) => {
-    signIn(provider, { callbackUrl: '/dashboard' });
+  const handleOAuth = async (provider: string) => {
+    if (provider === 'google') {
+      try {
+        setLoading(true);
+        const auth = getAuth(app);
+        const googleProvider = new GoogleAuthProvider();
+        await signInWithRedirect(auth, googleProvider);
+        // Page will redirect to Google, then come back
+        // The result is handled in the useEffect above
+      } catch (err: any) {
+        setLoading(false);
+        console.error(err);
+        setError(err.message || 'Google sign-in failed.');
+      }
+    } else {
+      signIn(provider, { callbackUrl: '/dashboard' });
+    }
   };
 
   return (
