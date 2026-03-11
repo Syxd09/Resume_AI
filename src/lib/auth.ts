@@ -17,49 +17,24 @@ const providers: NextAuthOptions['providers'] = [
             password: { label: 'Password', type: 'password' },
         },
         async authorize(credentials) {
-            console.log('[Auth] --- Authorize Attempt ---');
-            console.log('[Auth] Email input:', credentials?.email);
+            if (!credentials?.email || !credentials?.password) return null;
 
-            if (!credentials?.email || !credentials?.password) {
-                console.log('[Auth] Failed: Missing email or password');
-                return null;
-            }
-
-            const normalizedEmail = credentials.email.toLowerCase().trim();
-            console.log('[Auth] Normalized email:', normalizedEmail);
+            const email = credentials.email.toLowerCase().trim();
 
             try {
-                // Verify Database URL is loaded
-                if (!process.env.DATABASE_URL) {
-                    console.error('[Auth] ERROR: DATABASE_URL is not defined in environment!');
-                }
-
                 const user = await prisma.user.findUnique({
-                    where: { email: normalizedEmail },
+                    where: { email },
                 });
 
-                if (!user) {
-                    console.log('[Auth] Failed: User not found in database.');
-                    return null;
-                }
+                if (!user || !user.password) return null;
 
-                if (!user.password) {
-                    console.log('[Auth] Failed: User exists but has no password (OAuth account).');
-                    return null;
-                }
+                const isValid = await bcrypt.compare(credentials.password, user.password);
 
-                console.log('[Auth] User found, comparing password hash...');
-                const valid = await bcrypt.compare(credentials.password, user.password);
+                if (!isValid) return null;
 
-                if (!valid) {
-                    console.log('[Auth] Failed: Password mismatch.');
-                    return null;
-                }
-
-                console.log('[Auth] Success: Credentials valid. Session initiating...');
                 return { id: user.id, email: user.email, name: user.name, credits: user.credits };
             } catch (error) {
-                console.error('[Auth] CRITICAL ERROR during authorization:', error);
+                console.error('[Auth] Authorize error:', error);
                 return null;
             }
         },
