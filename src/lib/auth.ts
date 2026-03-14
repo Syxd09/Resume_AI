@@ -41,46 +41,16 @@ const providers: NextAuthOptions['providers'] = [
     }),
 ];
 
-// Add Firebase Google Auth adapter
-providers.push(
-    CredentialsProvider({
-        id: 'firebase',
-        name: 'Firebase',
-        credentials: {
-            firebaseToken: { label: 'Firebase Token', type: 'text' },
-        },
-        async authorize(credentials) {
-            if (!credentials?.firebaseToken) return null;
-            try {
-                const { adminAuth } = await import('@/lib/firebase-admin');
-                const decodedToken = await adminAuth.verifyIdToken(credentials.firebaseToken);
-
-                const { email, name, picture } = decodedToken;
-                if (!email) return null;
-
-                let user = await prisma.user.findUnique({
-                    where: { email },
-                });
-
-                if (!user) {
-                    user = await prisma.user.create({
-                        data: {
-                            email,
-                            name: name || email.split('@')[0],
-                            image: picture,
-                            credits: 10,
-                        },
-                    });
-                }
-
-                return { id: user.id, email: user.email, name: user.name, image: user.image, credits: user.credits };
-            } catch (error) {
-                console.error('[Firebase Auth] Error:', error);
-                return null;
-            }
-        }
-    })
-);
+// Add Google OAuth if configured
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    providers.push(
+        GoogleProvider({
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            allowDangerousEmailAccountLinking: true,
+        })
+    );
+}
 
 // Add GitHub OAuth if configured
 if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
