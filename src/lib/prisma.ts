@@ -29,10 +29,13 @@ function createPrismaClient() {
     }
 
     // Prisma 7 requires an adapter or accelerateUrl for direct TCP connections
+    // Supabase requires SSL for all external connections.
+    // The pooler hostname ends in .supabase.com, while direct ends in .supabase.co.
+    const isSupabase = dbUrl.includes('supabase.co') || dbUrl.includes('supabase.com');
+
     const pool = new pg.Pool({
         connectionString: dbUrl,
-        // Supabase requires SSL for external connections
-        ssl: dbUrl.includes('supabase.co') ? { rejectUnauthorized: false } : false
+        ssl: isSupabase ? { rejectUnauthorized: false } : false
     });
 
     const adapter = new PrismaPg(pool);
