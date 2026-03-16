@@ -22,14 +22,32 @@ export default function JobsPage() {
     const [total, setTotal] = useState(0);
     const [searchStatus, setSearchStatus] = useState<'partial' | 'global'>('partial');
     const [loadingMore, setLoadingMore] = useState(false);
+    const [resumes, setResumes] = useState<any[]>([]);
+    const [selectedResumeId, setSelectedResumeId] = useState<string>('');
+    const [customQuery, setCustomQuery] = useState('');
+    const [activeSource, setActiveSource] = useState<'resume' | 'manual'>('resume');
+    const [contextName, setContextName] = useState('Latest Resume');
 
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
 
     useEffect(() => {
         if (status === 'unauthenticated') router.push('/auth/signin');
-        if (status === 'authenticated') fetchJobs(1);
+        if (status === 'authenticated') {
+            fetchResumes();
+            fetchJobs(1);
+        }
     }, [status, router]);
+
+    const fetchResumes = async () => {
+        try {
+            const res = await fetch('/api/resumes');
+            const data = await res.json();
+            if (res.ok) setResumes(data.resumes || []);
+        } catch (err) {
+            console.error('Failed to fetch resumes');
+        }
+    };
 
     const fetchJobs = async (pageNum: number, isLoadMore = false) => {
         if (isLoadMore) setLoadingMore(true);
@@ -37,7 +55,11 @@ export default function JobsPage() {
         
         setError(null);
         try {
-            const res = await fetch(`/api/jobs/search?page=${pageNum}`);
+            const params = new URLSearchParams({ page: pageNum.toString() });
+            if (activeSource === 'resume' && selectedResumeId) params.append('resumeId', selectedResumeId);
+            if (activeSource === 'manual' && customQuery) params.append('query', customQuery);
+
+            const res = await fetch(`/api/jobs/search?${params.toString()}`);
             const data = await res.json();
             
             if (data.missingConfig) {
@@ -52,11 +74,11 @@ export default function JobsPage() {
                 }
                 
                 setQuery(data.query || '');
+                setContextName(data.context || 'Custom Search');
                 setTotal(prev => isLoadMore ? prev + newJobs.length : data.total || 0);
                 setSearchStatus(data.status || 'partial');
                 setPage(pageNum);
                 
-                // If we got results, assume there might be more unless very few returned
                 if (newJobs.length === 0) setHasMore(false);
                 else setHasMore(true);
             } else {
@@ -68,6 +90,18 @@ export default function JobsPage() {
             setLoading(false);
             setLoadingMore(false);
         }
+    };
+
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault();
+        setActiveSource('manual');
+        fetchJobs(1);
+    };
+
+    const handleResumeChange = (id: string) => {
+        setSelectedResumeId(id);
+        setActiveSource('resume');
+        fetchJobs(1);
     };
 
     const loadMore = () => {
@@ -132,11 +166,71 @@ export default function JobsPage() {
                     </div>
                 </div>
 
+                {/* Advanced Control Center */}
+                <div className="mb-16 grid grid-cols-1 lg:grid-cols-3 gap-8 p-8 bg-zinc-900/40 border border-white/5 backdrop-blur-3xl rounded-[2.5rem] relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-primary/2 opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+                    
+                    {/* Source Selector */}
+                    <div className="space-y-4">
+                        <label className="text-[0.6rem] font-black text-zinc-600 uppercase tracking-[0.3em] ml-2">Neural_Source</label>
+                        <div className="flex gap-2 p-1.5 bg-black/40 rounded-2xl border border-white/5">
+                            <button 
+                                onClick={() => setActiveSource('resume')}
+                                className={`flex-1 py-3 px-4 rounded-xl text-[0.65rem] font-black uppercase tracking-widest transition-all ${activeSource === 'resume' ? 'bg-white/10 text-primary shadow-xl ring-1 ring-white/10' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            >
+                                Resume_Mode
+                            </button>
+                            <button 
+                                onClick={() => setActiveSource('manual')}
+                                className={`flex-1 py-3 px-4 rounded-xl text-[0.65rem] font-black uppercase tracking-widest transition-all ${activeSource === 'manual' ? 'bg-white/10 text-primary shadow-xl ring-1 ring-white/10' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            >
+                                Manual_Uplink
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Context Options */}
+                    <div className="lg:col-span-2 space-y-4">
+                        <label className="text-[0.6rem] font-black text-zinc-600 uppercase tracking-[0.3em] ml-2">Context_Configuration</label>
+                        
+                        {activeSource === 'resume' ? (
+                            <div className="flex flex-wrap gap-3">
+                                <select 
+                                    className="bg-black/40 border border-white/5 rounded-2xl px-6 h-14 text-zinc-300 text-xs font-mono focus:ring-1 focus:ring-primary/50 outline-none w-full lg:w-auto min-w-[300px]"
+                                    value={selectedResumeId}
+                                    onChange={(e) => handleResumeChange(e.target.value)}
+                                >
+                                    <option value="">Latest Optimized Resume</option>
+                                    {resumes.map(r => (
+                                        <option key={r.id} value={r.id}>{r.title}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        ) : (
+                            <form onSubmit={handleSearch} className="flex gap-3">
+                                <div className="flex-1 relative">
+                                    <input 
+                                        type="text" 
+                                        placeholder="Enter target career path (e.g. Senior Frontend at Netflix)..."
+                                        value={customQuery}
+                                        onChange={(e) => setCustomQuery(e.target.value)}
+                                        className="w-full bg-black/40 border border-white/5 rounded-full px-8 h-14 text-zinc-300 text-xs font-mono focus:ring-1 focus:ring-primary/50 outline-none placeholder:text-zinc-700"
+                                    />
+                                    <Search className="absolute right-6 top-1/2 -translate-y-1/2 text-zinc-700" size={18} />
+                                </div>
+                                <Button type="submit" className="h-14 px-10 bg-primary hover:bg-primary/80 text-black font-black uppercase tracking-widest text-[0.65rem] rounded-full shadow-lg shadow-primary/20 transition-all hover:scale-[1.02]">
+                                    SCAN
+                                </Button>
+                            </form>
+                        )}
+                    </div>
+                </div>
+
                 {/* Stats / Filters Bar */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-16">
                     {[
                         { label: 'Neural Matches', value: loading ? '...' : total, icon: <Zap className="text-primary" /> },
-                        { label: 'Active Sectors', value: '14', icon: <Globe className="text-zinc-400" /> },
+                        { label: 'Active Context', value: contextName.length > 12 ? contextName.substring(0, 10) + '..' : contextName, icon: <Globe className="text-zinc-400" /> },
                         { label: 'Search Latency', value: '42ms', icon: <TrendingUp className="text-emerald-500" /> },
                         { label: 'Match Confidence', value: '94%', icon: <Sparkles className="text-amber-500" /> }
                     ].map((stat, i) => (
