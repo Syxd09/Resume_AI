@@ -4,9 +4,9 @@ import { authOptions } from '@/lib/auth';
 import Razorpay from 'razorpay';
 
 const PACKAGES: Record<string, { amount: number; tokens: number; name: string }> = {
-    starter: { amount: 500, tokens: 50, name: 'Starter Token Bundle' }, // ₹5.00
-    professional: { amount: 1500, tokens: 200, name: 'Professional Token Bundle' }, // ₹15.00
-    elite: { amount: 3000, tokens: 500, name: 'Elite Token Bundle' }, // ₹30.00
+    starter: { amount: 500, tokens: 50, name: 'Standard Gravity Bundle' }, // ₹5.00
+    professional: { amount: 1500, tokens: 200, name: 'Propulsor Gravity Bundle' }, // ₹15.00
+    elite: { amount: 3000, tokens: 500, name: 'Command Gravity Bundle' }, // ₹30.00
 };
 
 export async function POST(req: Request) {

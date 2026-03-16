@@ -515,17 +515,17 @@ function DashboardContent() {
       {showPricing && (
         <div className="fixed inset-0 z-[1000] bg-zinc-950/95 backdrop-blur-2xl flex items-center justify-center p-4 animate-in fade-in duration-500">
           <Card className="w-full max-w-4xl orbital-glass border-white/5 overflow-hidden rounded-[3rem] shadow-[-20px_40px_100px_rgba(0,0,0,0.8)]">
-            <div className="relative p-12 pb-8 border-b border-white/5 bg-black/40">
-              <Button variant="ghost" size="icon" className="absolute top-8 right-8 h-12 w-12 rounded-full hover:bg-white/5 text-zinc-500 hover:text-white transition-all" onClick={() => setShowPricing(false)}>
-                <X className="h-6 w-6" />
+            <div className="relative p-12 pb-10 border-b border-white/5 bg-black/60 shadow-2xl">
+              <Button variant="ghost" size="icon" className="absolute top-8 right-8 h-12 w-12 rounded-full hover:bg-white/5 text-zinc-500 hover:text-white transition-all z-20" onClick={() => setShowPricing(false)}>
+                <X className="h-8 w-8" />
               </Button>
               <div className="text-center space-y-4">
-                 <h2 className="text-5xl font-black italic tracking-[-0.05em] uppercase text-white font-heading">Gather <span className="text-primary not-italic">Gravity</span></h2>
-                 <p className="text-zinc-500 font-black uppercase tracking-[0.4em] text-[0.7rem]">Aquire propulsion units for your next career elevation.</p>
+                 <h2 className="text-6xl md:text-7xl font-black italic tracking-[-0.05em] uppercase text-white font-heading">GATHER <span className="text-primary not-italic">GRAVITY</span></h2>
+                 <p className="text-zinc-500 font-black uppercase tracking-[0.5em] text-[0.65rem] italic">Aquire propulsion units for your next career elevation.</p>
               </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 p-12">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 p-12 bg-zinc-950/50">
               {[
                 { id: 'starter', name: 'Standard', tokens: 50, price: '₹5', desc: 'Single build propulsion' },
                 { id: 'professional', name: 'Propulsor', tokens: 200, price: '₹15', desc: 'Rapid deployment array', featured: true },
@@ -533,41 +533,46 @@ function DashboardContent() {
               ].map(pkg => (
                 <div 
                   key={pkg.id} 
-                  className={`relative flex flex-col p-10 rounded-[2.5rem] border-2 transition-all hover:scale-[1.03] duration-500 group ${pkg.featured ? 'border-primary bg-primary/5 shadow-[0_0_50px_rgba(var(--primary-rgb),0.15)]' : 'border-white/5 bg-white/5 hover:border-white/20'}`}
+                  className={`relative flex flex-col p-12 rounded-[3.5rem] border-2 transition-all hover:scale-[1.02] duration-500 group overflow-hidden ${pkg.featured ? 'border-primary bg-primary/5 shadow-[0_0_80px_rgba(var(--primary-rgb),0.15)] ring-1 ring-primary/20' : 'border-white/5 bg-white/5 hover:border-white/10'}`}
                 >
                   {pkg.featured && (
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-primary text-white text-[0.55rem] font-black px-6 py-2 rounded-full uppercase tracking-[0.2em] shadow-lg animate-pulse whitespace-nowrap">
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-primary text-black text-[0.6rem] font-black px-8 py-2.5 rounded-full uppercase tracking-[0.3em] shadow-2xl z-20 whitespace-nowrap -mt-0.5">
                       Tactical Choice
                     </div>
                   )}
-                  <h4 className="font-black text-2xl mb-2 italic uppercase tracking-tighter text-white font-heading">{pkg.name}</h4>
-                  <div className="flex items-baseline gap-2 mb-8">
-                     <div className="text-5xl font-black text-white tracking-tighter font-heading">{pkg.price}</div>
-                     <div className="text-[0.6rem] font-black text-zinc-600 uppercase tracking-widest">Initial Fee</div>
-                  </div>
                   
-                  <div className="space-y-4 mb-10 pb-10 border-b border-white/5">
-                    <div className="flex items-center gap-3 text-primary font-black uppercase tracking-widest text-[0.6rem]">
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary" /> {pkg.tokens} Gravity Units
+                  <div className="relative z-10 flex-1">
+                    <h4 className="font-black text-3xl mb-3 italic uppercase tracking-tighter text-white font-heading">{pkg.name}</h4>
+                    <div className="flex items-baseline gap-2 mb-10">
+                       <div className="text-6xl font-black text-white tracking-tighter font-heading">{pkg.price}</div>
+                       <div className="text-[0.65rem] font-black text-zinc-600 uppercase tracking-widest leading-none">Initial_Fee</div>
                     </div>
-                    <p className="text-[0.65rem] text-zinc-500 font-medium leading-relaxed uppercase tracking-wider">{pkg.desc}</p>
+                    
+                    <div className="space-y-5 mb-12 pb-10 border-b border-white/5">
+                      <div className="flex items-center gap-3 text-primary font-black uppercase tracking-widest text-[0.7rem] italic">
+                        <div className="h-2 w-2 rounded-full bg-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.5)]" /> {pkg.tokens} Gravity Units
+                      </div>
+                      <p className="text-[0.7rem] text-zinc-500 font-bold leading-relaxed uppercase tracking-widest italic">{pkg.desc}</p>
+                    </div>
                   </div>
 
                   <Button 
-                    className={`w-full h-14 font-black uppercase tracking-[0.2em] text-[0.65rem] rounded-full transition-all ${pkg.featured ? 'bg-primary text-white saturn-glow shadow-primary/20' : 'bg-zinc-800 text-white hover:bg-zinc-700 shadow-xl'}`} 
+                    className={`relative z-10 w-full h-16 font-black uppercase tracking-[0.4em] text-[0.7rem] rounded-full transition-all italic ${pkg.featured ? 'bg-primary text-black saturn-glow shadow-primary/40 hover:bg-white overflow-hidden' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white shadow-xl'}`} 
                     disabled={!!purchaseLoading}
                     onClick={() => handlePurchase(pkg.id)}
                   >
-                    {purchaseLoading === pkg.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'INITIALIZE'}
+                    {purchaseLoading === pkg.id ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Initialize'}
                   </Button>
                 </div>
               ))}
             </div>
             
-            <div className="p-8 bg-black/40 border-t border-white/5 text-center">
-               <p className="text-[0.5rem] font-black text-zinc-700 uppercase tracking-[0.5em]">Secure Terminal • Powered by Razorpay SSL Encryption</p>
+            <div className="p-10 bg-black/60 border-t border-white/5 text-center flex flex-col items-center gap-4">
+               <div className="h-[1px] w-20 bg-white/5" />
+               <p className="text-[0.55rem] font-black text-zinc-800 uppercase tracking-[0.6em] italic">Secure Terminal • Powered by Razorpay SSL Encryption</p>
             </div>
           </Card>
+
         </div>
       )}
 

@@ -234,40 +234,78 @@ export default function LandingPage() {
                 <p className="text-zinc-500 font-bold tracking-[0.4em] uppercase text-xs">Sector categorization for elite status.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-                <div className="p-16 bg-zinc-950 border border-white/5 rounded-[4rem] text-left group hover:border-zinc-800 transition-all shadow-2xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-12 opacity-5"><Disc size={150} /></div>
-                    <span className="text-[0.6rem] font-black text-zinc-600 uppercase tracking-[0.5em] mb-4 block">SECTOR: PILOT (FREE)</span>
-                    <h3 className="text-5xl font-black italic text-white mb-10 font-heading">CORE</h3>
-                    <ul className="space-y-6 mb-16">
-                        {["10 Gravity Credits", "5 Exports", "Core Scan Protocol"].map(f => (
-                            <li key={f} className="flex items-center gap-4 text-xs font-black text-zinc-400 uppercase tracking-widest italic">
-                                <div className="h-2 w-2 rounded-full bg-primary/40" /> {f}
-                            </li>
-                        ))}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto pb-20">
+                {/* STANDARD Card */}
+                <div className="p-12 bg-zinc-950 border border-white/5 rounded-[4rem] text-left group hover:border-zinc-800 transition-all shadow-2xl relative overflow-hidden flex flex-col h-full">
+                    <div className="absolute top-0 right-0 p-8 opacity-5"><Disc size={120} /></div>
+                    <span className="text-[0.6rem] font-black text-zinc-600 uppercase tracking-[0.5em] mb-4 block">SECTOR: STANDARD</span>
+                    <h3 className="text-4xl font-black italic text-white mb-2 font-heading">STANDARD</h3>
+                    <div className="flex items-baseline gap-2 mb-10">
+                        <span className="text-5xl font-black text-white font-heading">₹5</span>
+                        <span className="text-[0.6rem] font-black text-zinc-700 uppercase tracking-widest">Initial_Fee</span>
+                    </div>
+                    <ul className="space-y-5 mb-12 flex-1">
+                        <li className="flex items-center gap-4 text-[0.65rem] font-black text-primary uppercase tracking-widest italic">
+                            <div className="h-2 w-2 rounded-full bg-primary" /> 50 Gravity Units
+                        </li>
+                        <li className="flex items-center gap-4 text-[0.65rem] font-black text-zinc-500 uppercase tracking-widest italic">
+                            <div className="h-2 w-2 rounded-full bg-zinc-800" /> Single Build Propulsion
+                        </li>
                     </ul>
-                    <Link href="/auth/signin">
-                        <button className="w-full h-16 bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-[0.3em] text-[0.65rem] rounded-full border border-white/5 transition-all outline-none font-heading">
-                            LAUNCH_CORE
+                    <Link href={ctaHref === '/dashboard' ? '/dashboard?purchase=true' : ctaHref} className="w-full">
+                        <button className="w-full h-16 bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-[0.3em] text-[0.65rem] rounded-full border border-white/5 transition-all outline-none font-heading uppercase italic">
+                            Initialize
                         </button>
                     </Link>
                 </div>
 
-                <div className="p-16 bg-zinc-950 border border-primary/30 rounded-[4rem] text-left group hover:border-primary/50 transition-all shadow-primary/20 shadow-2xl relative overflow-hidden">
-                    <div className="absolute inset-0 bg-primary/5 animate-pulse pointer-events-none" />
-                    <div className="absolute top-0 right-0 p-12 opacity-10 text-primary"><Sparkles size={150} /></div>
-                    <span className="text-[0.6rem] font-black text-primary uppercase tracking-[0.5em] mb-4 block">SECTOR: ELITE ($5.00)</span>
-                    <h3 className="text-5xl font-black italic text-white mb-10 font-heading">COMMAND</h3>
-                    <ul className="space-y-6 mb-16">
-                        {["Unlimited Credits", "Infinite Exports", "Deep Scan Audit", "Station Support"].map(f => (
-                            <li key={f} className="flex items-center gap-4 text-xs font-black text-white uppercase tracking-widest italic">
-                                <div className="h-2 w-2 rounded-full bg-primary" /> {f}
-                            </li>
-                        ))}
+                {/* PROPULSOR Card */}
+                <div className="p-12 bg-zinc-950 border-2 border-primary/50 rounded-[4rem] text-left group hover:border-primary transition-all shadow-[0_0_80px_rgba(var(--primary-rgb),0.15)] relative overflow-hidden flex flex-col h-full scale-105 z-10">
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-primary text-black text-[0.6rem] font-black px-8 py-2.5 rounded-full uppercase tracking-[0.3em] shadow-2xl z-20 whitespace-nowrap -mt-1">
+                        Tactical Choice
+                    </div>
+                    <div className="absolute top-0 right-0 p-8 opacity-10 text-primary animate-pulse"><Orbit size={120} /></div>
+                    <span className="text-[0.6rem] font-black text-primary uppercase tracking-[0.5em] mt-6 mb-4 block">SECTOR: PROPULSOR</span>
+                    <h3 className="text-4xl font-black italic text-white mb-2 font-heading">PROPULSOR</h3>
+                    <div className="flex items-baseline gap-2 mb-10">
+                        <span className="text-5xl font-black text-white font-heading">₹15</span>
+                        <span className="text-[0.6rem] font-black text-zinc-700 uppercase tracking-widest">Initial_Fee</span>
+                    </div>
+                    <ul className="space-y-5 mb-12 flex-1">
+                        <li className="flex items-center gap-4 text-[0.65rem] font-black text-primary uppercase tracking-widest italic">
+                            <div className="h-2 w-2 rounded-full bg-primary" /> 200 Gravity Units
+                        </li>
+                        <li className="flex items-center gap-4 text-[0.65rem] font-black text-zinc-400 uppercase tracking-widest italic">
+                            <div className="h-2 w-2 rounded-full bg-zinc-700" /> Rapid Deployment Array
+                        </li>
                     </ul>
-                    <Link href="/auth/signin">
-                        <button className="w-full h-16 bg-primary hover:bg-primary/90 text-white font-black uppercase tracking-[0.3em] text-[0.65rem] rounded-full border-none transition-all saturn-glow outline-none font-heading">
-                            ELEVATE_COMMAND
+                    <Link href={ctaHref === '/dashboard' ? '/dashboard?purchase=true' : ctaHref} className="w-full">
+                        <button className="w-full h-16 bg-primary hover:bg-white text-black font-black uppercase tracking-[0.3em] text-[0.65rem] rounded-full border-none transition-all saturn-glow outline-none font-heading uppercase italic">
+                            Initialize
+                        </button>
+                    </Link>
+                </div>
+
+                {/* COMMAND Card */}
+                <div className="p-12 bg-zinc-950 border border-white/5 rounded-[4rem] text-left group hover:border-zinc-800 transition-all shadow-2xl relative overflow-hidden flex flex-col h-full">
+                    <div className="absolute top-0 right-0 p-8 opacity-10 text-zinc-700"><Sparkles size={120} /></div>
+                    <span className="text-[0.6rem] font-black text-zinc-600 uppercase tracking-[0.5em] mb-4 block">SECTOR: COMMAND</span>
+                    <h3 className="text-4xl font-black italic text-white mb-2 font-heading">COMMAND</h3>
+                    <div className="flex items-baseline gap-2 mb-10">
+                        <span className="text-5xl font-black text-white font-heading">₹30</span>
+                        <span className="text-[0.6rem] font-black text-zinc-700 uppercase tracking-widest">Initial_Fee</span>
+                    </div>
+                    <ul className="space-y-5 mb-12 flex-1">
+                        <li className="flex items-center gap-4 text-[0.65rem] font-black text-primary uppercase tracking-widest italic">
+                            <div className="h-2 w-2 rounded-full bg-primary" /> 500 Gravity Units
+                        </li>
+                        <li className="flex items-center gap-4 text-[0.65rem] font-black text-zinc-500 uppercase tracking-widest italic">
+                            <div className="h-2 w-2 rounded-full bg-zinc-800" /> Unlimited Orbital Reach
+                        </li>
+                    </ul>
+                    <Link href={ctaHref === '/dashboard' ? '/dashboard?purchase=true' : ctaHref} className="w-full">
+                        <button className="w-full h-16 bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-[0.3em] text-[0.65rem] rounded-full border border-white/5 transition-all outline-none font-heading uppercase italic">
+                            Initialize
                         </button>
                     </Link>
                 </div>
