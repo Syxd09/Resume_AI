@@ -5,7 +5,8 @@
   "scripts": {
     "setup": "node scripts/setup.js",
     "dev": "next dev",
-    "predev": "npm run setup && prisma db push",
+    "predev": "npm run setup",
+    "db:push": "prisma db push",
     "build": "next build",
     "prebuild": "npm run setup && prisma generate",
     "postinstall": "npm run setup && prisma generate",

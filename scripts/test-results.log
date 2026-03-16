@@ -1,0 +1,9 @@
+--- Connection Test Log ---
+
+Testing: Direct (5432)
+❌ FAILED in 10008ms: timeout expired
+
+Testing: Pooler (6543)
+✅ SUCCESS in 828ms!
+User: postgres
+Database: postgres
