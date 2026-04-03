@@ -153,7 +153,7 @@ export default function AuthPage() {
          <div className="absolute inset-0 border-y border-amber-500/10 rounded-[100%] scale-[0.98]" />
       </div>
 
-      <div className="absolute top-0 left-0 w-full h-full bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none z-0" />
+      <div className="absolute top-0 left-0 w-full h-full bg-[url('/noise.svg')] opacity-20 pointer-events-none z-0" />
       
       <Link href="/" className="absolute top-8 left-8 z-10 hidden md:flex items-center gap-3 text-xs font-black uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity text-white hover:text-primary">
         <ChevronLeft size={16} className="text-primary" /> Return to Orbit
@@ -224,6 +224,7 @@ export default function AuthPage() {
                   onChange={e => setEmail(e.target.value)}
                   className="w-full bg-black/40 border-2 border-white/10 rounded-2xl h-14 pl-12 pr-4 text-sm font-medium text-white placeholder:text-zinc-600 focus:border-primary focus:bg-black/60 transition-all outline-none focus:shadow-[0_0_20px_rgba(var(--primary-rgb),0.2)]" 
                   placeholder="comm_link@saturn.ai" 
+                  autoComplete="email"
                   required 
                 />
               </div>
@@ -239,6 +240,7 @@ export default function AuthPage() {
                   onChange={e => setPassword(e.target.value)}
                   className="w-full bg-black/40 border-2 border-white/10 rounded-2xl h-14 pl-12 pr-4 text-sm font-medium text-white placeholder:text-zinc-600 focus:border-primary focus:bg-black/60 transition-all outline-none" 
                   placeholder="••••••••" 
+                  autoComplete={tab === 'signin' ? "current-password" : "new-password"}
                   required 
                   minLength={tab === 'signin' ? 4 : 6}
                 />

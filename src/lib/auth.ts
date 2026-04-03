@@ -13,37 +13,37 @@ const providers: NextAuthOptions['providers'] = [
         },
         async authorize(credentials) {
             if (!credentials?.idToken) {
-                console.error('[Auth] No idToken provided');
+                console.error('[Auth] [Credentials] 401: No idToken provided in request body');
                 return null;
             }
 
             try {
-                console.log('[Auth] Verifying Firebase ID Token...');
                 const auth = getAdminAuth();
                 const db = getAdminDb();
 
+                console.log('[Auth] [Credentials] Attempting to verify ID Token...');
                 const decodedToken = await auth.verifyIdToken(credentials.idToken);
+                
                 if (!decodedToken) {
-                    console.error('[Auth] verifyIdToken returned null');
+                    console.error('[Auth] [Credentials] 401: verifyIdToken returned null or undefined');
                     return null;
                 }
 
-                console.log('[Auth] Token verified for:', decodedToken.email);
                 const { email, name, picture, uid } = decodedToken;
+                console.log(`[Auth] [Credentials] Identity verified: ${email} (UID: ${uid})`);
 
                 if (!email) {
-                    console.error('[Auth] No email found in decoded token');
+                    console.error('[Auth] [Credentials] 401: Decoded token matches a user but contains no email scope');
                     return null;
                 }
 
                 try {
-                    console.log('[Auth] Syncing user to Firestore:', email);
                     const userRef = db.collection('users').doc(uid);
                     const userDoc = await userRef.get();
 
                     let userData;
                     if (!userDoc.exists) {
-                        console.log('[Auth] Creating new user in Firestore for:', email);
+                        console.log(`[Auth] [Credentials] Initializing first-time profile for: ${email}`);
                         userData = {
                             id: uid,
                             email,
@@ -56,7 +56,6 @@ const providers: NextAuthOptions['providers'] = [
                         await userRef.set(userData);
                     } else {
                         userData = userDoc.data();
-                        console.log('[Auth] Existing user found in Firestore');
                     }
 
                     return { 
@@ -67,11 +66,12 @@ const providers: NextAuthOptions['providers'] = [
                         image: userData?.image 
                     };
                 } catch (dbError: any) {
-                    console.error('[Auth] Firestore Sync Error:', dbError.message || dbError);
-                    throw new Error(`Database Error: ${dbError.message || 'Unknown error'}`);
+                    console.error('[Auth] [Credentials] 500: Datastore sync failed during authorization:', dbError.message || dbError);
+                    // We throw here so NextAuth captures the error rather than a silent 401
+                    throw new Error(`Datastore Error: ${dbError.message || 'Unknown'}`);
                 }
             } catch (error: any) {
-                console.error('[Auth] Firebase/Auth Verify error:', error.message || error);
+                console.error('[Auth] [Credentials] 401: Firebase Admin verification failed:', error.message || error);
                 return null;
             }
         },
