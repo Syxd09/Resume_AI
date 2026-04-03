@@ -111,7 +111,7 @@ const calculateLiveScore = (data: ResumeData) => {
 export default function ResumeForm({ onSubmit, isLoading }: ResumeFormProps) {
   const store = useResumeStore();
   const data = store.data;
-  const step = store.step;
+  const step = (typeof store.step === 'number' && store.step >= 0 && store.step < STEPS.length) ? store.step : 0;
   const setStep = store.setStep;
 
   // AI suggestions

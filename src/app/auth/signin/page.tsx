@@ -6,6 +6,14 @@ import { useRouter } from 'next/navigation';
 import { Mail, Lock, Loader2, Sparkles, ArrowRight, User, Github, Linkedin, ChevronLeft, Orbit } from 'lucide-react';
 import { useMousePosition } from '@/hooks/useMousePosition';
 import Link from 'next/link';
+import { auth } from '@/lib/firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  GoogleAuthProvider, 
+  signInWithPopup,
+  updateProfile 
+} from 'firebase/auth';
 
 type Tab = 'signin' | 'register';
 
@@ -27,19 +35,28 @@ export default function AuthPage() {
     setError('');
     setLoading(true);
 
-    const result = await signIn('credentials', {
-      redirect: false,
-      email,
-      password,
-    });
+    try {
+      // 1. Sign in with Firebase
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const idToken = await userCredential.user.getIdToken();
 
-    setLoading(false);
+      // 2. Sign in to NextAuth with the Firebase ID Token
+      const result = await signIn('credentials', {
+        redirect: false,
+        idToken,
+      });
 
-    if (result?.error) {
-      setError('Invalid email or password. Please try again.');
-    } else {
-      router.push('/dashboard');
-      router.refresh();
+      if (result?.error) {
+        setError('Invalid email or password. Please try again.');
+        setLoading(false);
+      } else {
+        router.push('/dashboard');
+        router.refresh();
+      }
+    } catch (err: any) {
+      console.error('[SignIn] Error:', err);
+      setError(err.message || 'Invalid email or password.');
+      setLoading(false);
     }
   };
 
@@ -58,27 +75,21 @@ export default function AuthPage() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name || email.split('@')[0], email, password }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || 'Registration failed.');
-        setLoading(false);
-        return;
+      // 1. Create user in Firebase
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Update profile with name if provided
+      if (name) {
+        await updateProfile(userCredential.user, { displayName: name });
       }
 
-      // Auto sign-in after registration
+      const idToken = await userCredential.user.getIdToken();
+
+      // 2. Sign in to NextAuth with the Firebase ID Token
       const result = await signIn('credentials', {
         redirect: false,
-        email,
-        password,
+        idToken,
       });
-
-      setLoading(false);
 
       if (result?.error) {
         setError('Account created! Please sign in.');
@@ -87,14 +98,43 @@ export default function AuthPage() {
         router.push('/dashboard');
         router.refresh();
       }
-    } catch {
-      setError('Something went wrong. Please try again.');
+    } catch (err: any) {
+      console.error('[Register] Error:', err);
+      setError(err.message || 'Registration failed.');
+    } finally {
       setLoading(false);
     }
   };
 
-  const handleOAuth = async (provider: string) => {
-    signIn(provider, { callbackUrl: '/dashboard' });
+  const handleOAuth = async (providerName: string) => {
+    if (providerName === 'google') {
+      setLoading(true);
+      try {
+        const provider = new GoogleAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+        const idToken = await result.user.getIdToken();
+
+        const nextAuthResult = await signIn('credentials', {
+          redirect: false,
+          idToken,
+        });
+
+        if (nextAuthResult?.error) {
+          setError('Authentication failed.');
+        } else {
+          router.push('/dashboard');
+          router.refresh();
+        }
+      } catch (err: any) {
+        console.error('[OAuth] Error:', err);
+        setError(err.message || 'OAuth failed.');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // For other providers (GitHub, LinkedIn), use standard NextAuth if configured
+      signIn(providerName, { callbackUrl: '/dashboard' });
+    }
   };
 
   return (

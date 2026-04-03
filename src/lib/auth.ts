@@ -3,45 +3,81 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import GitHubProvider from 'next-auth/providers/github';
 import LinkedInProvider from 'next-auth/providers/linkedin';
-import { PrismaAdapter } from '@auth/prisma-adapter';
-import bcrypt from 'bcryptjs';
-import prisma from '@/lib/prisma';
+import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { cookies } from 'next/headers';
 import { decode } from 'next-auth/jwt';
 
 const providers: NextAuthOptions['providers'] = [
     CredentialsProvider({
-        name: 'Email',
+        name: 'Firebase',
         credentials: {
-            email: { label: 'Email', type: 'email' },
-            password: { label: 'Password', type: 'password' },
+            idToken: { label: 'Token', type: 'text' },
         },
         async authorize(credentials) {
-            if (!credentials?.email || !credentials?.password) return null;
-
-            const email = credentials.email.toLowerCase().trim();
+            if (!credentials?.idToken) {
+                console.error('[Auth] No idToken provided');
+                return null;
+            }
 
             try {
-                const user = await prisma.user.findUnique({
-                    where: { email },
-                });
+                console.log('[Auth] Verifying Firebase ID Token...');
+                const decodedToken = await adminAuth.verifyIdToken(credentials.idToken);
+                if (!decodedToken) {
+                    console.error('[Auth] verifyIdToken returned null');
+                    return null;
+                }
 
-                if (!user || !user.password) return null;
+                console.log('[Auth] Token verified for:', decodedToken.email);
+                const { email, name, picture, uid } = decodedToken;
 
-                const isValid = await bcrypt.compare(credentials.password, user.password);
+                if (!email) {
+                    console.error('[Auth] No email found in decoded token');
+                    return null;
+                }
 
-                if (!isValid) return null;
+                try {
+                    console.log('[Auth] Syncing user to Firestore:', email);
+                    const userRef = adminDb.collection('users').doc(uid);
+                    const userDoc = await userRef.get();
 
-                return { id: user.id, email: user.email, name: user.name, credits: user.credits };
-            } catch (error) {
-                console.error('[Auth] Authorize error:', error);
+                    let userData;
+                    if (!userDoc.exists) {
+                        console.log('[Auth] Creating new user in Firestore for:', email);
+                        userData = {
+                            id: uid,
+                            email,
+                            name: name || email.split('@')[0],
+                            image: picture || null,
+                            credits: 10,
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
+                        };
+                        await userRef.set(userData);
+                    } else {
+                        userData = userDoc.data();
+                        console.log('[Auth] Existing user found in Firestore');
+                    }
+
+                    return { 
+                        id: uid, 
+                        email: userData?.email, 
+                        name: userData?.name, 
+                        credits: userData?.credits,
+                        image: userData?.image 
+                    };
+                } catch (dbError: any) {
+                    console.error('[Auth] Firestore Sync Error:', dbError.message || dbError);
+                    throw new Error(`Database Error: ${dbError.message || 'Unknown error'}`);
+                }
+            } catch (error: any) {
+                console.error('[Auth] Firebase/Auth Verify error:', error.message || error);
                 return null;
             }
         },
     }),
 ];
 
-// Add Google OAuth if configured
+// Add Google OAuth if configured (Fallback for direct NextAuth usage)
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     providers.push(
         GoogleProvider({
@@ -52,166 +88,58 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     );
 }
 
-// Add GitHub OAuth if configured
-if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
-    providers.push(
-        GitHubProvider({
-            clientId: process.env.GITHUB_CLIENT_ID,
-            clientSecret: process.env.GITHUB_CLIENT_SECRET,
-            allowDangerousEmailAccountLinking: true,
-        })
-    );
-}
-
-// Add LinkedIn OAuth if configured
-if (process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET) {
-    providers.push(
-        LinkedInProvider({
-            clientId: process.env.LINKEDIN_CLIENT_ID,
-            clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
-            allowDangerousEmailAccountLinking: true,
-            issuer: 'https://www.linkedin.com/oauth',
-            jwks_endpoint: 'https://www.linkedin.com/oauth/openid/jwks',
-            profile(profile) {
-                return {
-                    id: profile.sub,
-                    name: profile.name,
-                    email: profile.email,
-                    image: profile.picture,
-                };
-            },
-        })
-    );
-}
-
 export const authOptions: NextAuthOptions = {
-    adapter: PrismaAdapter(prisma) as Exclude<NextAuthOptions['adapter'], undefined>,
+    // We are no longer using PrismaAdapter to avoid Supabase dependency
     secret: process.env.NEXTAUTH_SECRET,
     session: { strategy: 'jwt' },
     pages: { signIn: '/auth/signin' },
     providers,
     callbacks: {
-        async signIn({ user, account, profile }) {
-            // NextAuth's native "Account Linking" drops the login and throws `OAuthAccountNotLinked`
-            // if you try to sign in with an OAuth account that has a DIFFERENT email than the active session,
-            // or if the email exists but isn't explicitly linked yet (especially in JWT mode).
-
-            if (account && account.provider !== 'credentials') {
+        async signIn({ user, account }) {
+            // Silently synchronize user to Firestore if signing in via non-credentials provider
+            if (account && account.provider !== 'credentials' && user.email) {
                 try {
-                    // Try to extract the active session token to see if someone is currently logged in!
-                    const cookieStore = await cookies();
-                    // NextAuth uses different cookie prefixes in dev (http) vs prod (https)
-                    const sessionToken = cookieStore.get('next-auth.session-token')?.value ||
-                        cookieStore.get('__Secure-next-auth.session-token')?.value;
-
-                    let activeUserId = null;
-
-                    if (sessionToken) {
-                        // Decode the JWT to find who is currently logged into the app
-                        const decoded = await decode({
-                            token: sessionToken,
-                            secret: process.env.NEXTAUTH_SECRET as string,
+                    const userRef = adminDb.collection('users').doc(user.id);
+                    const userDoc = await userRef.get();
+                    if (!userDoc.exists) {
+                        await userRef.set({
+                            id: user.id || account.providerAccountId,
+                            email: user.email,
+                            name: user.name || user.email.split('@')[0],
+                            image: user.image || null,
+                            credits: 10,
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
                         });
-                        if (decoded && decoded.id) {
-                            activeUserId = decoded.id as string;
-                        }
                     }
-
-                    // If a user is actively logged in, bind the OAuth account to THEIR identity
-                    // regardless of what email the OAuth provider sent us!
-                    if (activeUserId) {
-                        const existingUser = await prisma.user.findUnique({
-                            where: { id: activeUserId },
-                            include: { accounts: true },
-                        });
-
-                        if (existingUser) {
-                            const isLinked = existingUser.accounts.some((acc) => acc.provider === account.provider);
-
-                            if (!isLinked) {
-                                await prisma.account.create({
-                                    data: {
-                                        userId: existingUser.id,
-                                        type: account.type,
-                                        provider: account.provider,
-                                        providerAccountId: account.providerAccountId,
-                                        access_token: account.access_token,
-                                        refresh_token: account.refresh_token,
-                                        expires_at: account.expires_at,
-                                        token_type: account.token_type,
-                                        scope: account.scope,
-                                        id_token: account.id_token,
-                                        session_state: account.session_state,
-                                    },
-                                });
-                            }
-                            return true;
-                        }
-                    } else if (user.email) {
-                        // Fallback: If no one is actively logged in (e.g. they are just logging in normally)
-                        // but an account with this email already exists, link it silently.
-                        const existingUserByEmail = await prisma.user.findUnique({
-                            where: { email: user.email },
-                            include: { accounts: true },
-                        });
-
-                        if (existingUserByEmail) {
-                            const isLinked = existingUserByEmail.accounts.some((acc) => acc.provider === account.provider);
-
-                            if (!isLinked) {
-                                await prisma.account.create({
-                                    data: {
-                                        userId: existingUserByEmail.id,
-                                        type: account.type,
-                                        provider: account.provider,
-                                        providerAccountId: account.providerAccountId,
-                                        access_token: account.access_token,
-                                        refresh_token: account.refresh_token,
-                                        expires_at: account.expires_at,
-                                        token_type: account.token_type,
-                                        scope: account.scope,
-                                        id_token: account.id_token,
-                                        session_state: account.session_state,
-                                    },
-                                });
-                            }
-                            return true;
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error during automatic account linking', error);
+                } catch (err) {
+                    console.error('[Auth] OAuth Sync Error:', err);
                 }
             }
             return true;
         },
-        async jwt({ token, user, trigger, session, account }) {
+        async jwt({ token, user }) {
             if (user) {
                 token.id = user.id;
                 token.credits = (user as { credits?: number }).credits;
-            }
-            if (trigger === 'update' && session) {
-                // NextAuth update() hook passes the session from the client if provided, however the better and safer way is to let the session callback fetch from DB because we just mutated the DB directly in the API. We can just return token here and let session() fetch latest DB values.
             }
             return token;
         },
         async session({ session, token }) {
             if (session.user) {
-                (session.user as { id?: string; credits?: number }).id = token.id as string;
+                (session.user as { id?: string }).id = token.id as string;
 
-                // Fetch latest user details from DB along with their linked OAuth accounts
-                const dbUser = await prisma.user.findUnique({
-                    where: { id: token.id as string },
-                    include: { accounts: true }
-                });
-
-                if (dbUser) {
-                    (session.user as any).credits = dbUser.credits ?? 0;
-                    (session.user as any).name = dbUser.name;
-                    (session.user as any).image = dbUser.image;
-                    (session.user as any).phone = (dbUser as any).phone;
-                    (session.user as any).address = (dbUser as any).address;
-                    // Pass down an array of connected provider IDs (e.g. ['google', 'github', 'linkedin'])
-                    (session.user as any).connectedProviders = dbUser.accounts.map(acc => acc.provider);
+                try {
+                    // Fetch latest user details from Firestore
+                    const userDoc = await adminDb.collection('users').doc(token.id as string).get();
+                    if (userDoc.exists) {
+                        const dbUser = userDoc.data();
+                        (session.user as any).credits = dbUser?.credits ?? 0;
+                        (session.user as any).name = dbUser?.name;
+                        (session.user as any).image = dbUser?.image;
+                    }
+                } catch (err) {
+                    console.error('[Auth] Session Sync Error:', err);
                 }
             }
             return session;

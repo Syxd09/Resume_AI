@@ -1,37 +1,41 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { adminDb } from '@/lib/firebase-admin';
 
 export async function POST(req: Request) {
     try {
         const session = await getServerSession(authOptions);
-        if (!session?.user?.email) {
+        if (!session?.user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        const userId = (session.user as any).id;
         const body = await req.json();
         const { name, phone, address, image } = body;
 
-        const user = await prisma.user.update({
-            where: { email: session.user.email },
-            data: {
-                name,
-                phone,
-                address,
-                image
-            },
-        });
+        const userRef = adminDb.collection('users').doc(userId);
+        const updateData: any = {
+            updatedAt: new Date().toISOString()
+        };
+        if (name !== undefined) updateData.name = name;
+        if (phone !== undefined) updateData.phone = phone;
+        if (address !== undefined) updateData.address = address;
+        if (image !== undefined) updateData.image = image;
+
+        await userRef.update(updateData);
+        const updated = await userRef.get();
+        const userData = updated.data()!;
 
         return NextResponse.json({
             success: true,
             user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                phone: user.phone,
-                address: user.address,
-                image: user.image
+                id: updated.id,
+                name: userData.name,
+                email: userData.email,
+                phone: userData.phone,
+                address: userData.address,
+                image: userData.image
             }
         });
     } catch (error: any) {

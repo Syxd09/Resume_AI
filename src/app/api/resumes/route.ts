@@ -1,30 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import prisma from '@/lib/prisma';
-import { unstable_cache, revalidateTag } from 'next/cache';
-
-const getCachedResumes = (userId: string) => unstable_cache(
-    async () => {
-        return await prisma.resume.findMany({
-            where: { userId },
-            orderBy: { createdAt: 'desc' },
-            select: { id: true, title: true, createdAt: true, updatedAt: true },
-        });
-    },
-    [`resumes-${userId}`],
-    { tags: [`resumes-${userId}`], revalidate: 3600 }
-)();
-
-const getCachedSingleResume = (id: string, userId: string) => unstable_cache(
-    async () => {
-        return await prisma.resume.findFirst({
-            where: { id, userId }
-        });
-    },
-    [`resume-${id}-${userId}`],
-    { tags: [`resumes-${userId}`, `resume-${id}`], revalidate: 3600 }
-)();
+import { adminDb } from '@/lib/firebase-admin';
 
 // GET: list user's resumes or a single resume
 export async function GET(req: Request) {
@@ -35,15 +12,41 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
 
-    if (id) {
-        const resume = await getCachedSingleResume(id, userId);
-        if (!resume) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-        return NextResponse.json({ resume });
+    try {
+        if (id) {
+            const resumeDoc = await adminDb.collection('resumes').doc(id).get();
+            if (!resumeDoc.exists) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+            
+            const resumeData = resumeDoc.data();
+            if (resumeData?.userId !== userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+
+            return NextResponse.json({ 
+                resume: { id: resumeDoc.id, ...resumeData } 
+            });
+        }
+
+        const resumesSnap = await adminDb.collection('resumes')
+            .where('userId', '==', userId)
+            // .orderBy('createdAt', 'desc') // Disabled until Firestore index is created
+            .get();
+
+        const resumes = resumesSnap.docs.map(doc => ({
+            id: doc.id,
+            title: doc.data().title,
+            createdAt: doc.data().createdAt,
+            updatedAt: doc.data().updatedAt,
+        }));
+
+        // Manual sort by createdAt desc
+        resumes.sort((a: any, b: any) => 
+            new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
+
+        return NextResponse.json({ resumes });
+    } catch (error: any) {
+        console.error('[API Resumes] GET Error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
-
-    const resumes = await getCachedResumes(userId);
-
-    return NextResponse.json({ resumes });
 }
 
 // POST: save a new resume
@@ -54,18 +57,24 @@ export async function POST(req: Request) {
     const userId = (session.user as any).id;
     const { title, data, markdown } = await req.json();
 
-    const resume = await prisma.resume.create({
-        data: {
+    try {
+        const now = new Date().toISOString();
+        const resumeRef = await adminDb.collection('resumes').add({
             userId,
             title: title || 'Untitled Resume',
             data: data || {},
             markdown: markdown || null,
-        },
-    });
+            createdAt: now,
+            updatedAt: now,
+        });
 
-    revalidateTag(`resumes-${userId}`, {});
-
-    return NextResponse.json({ resume });
+        return NextResponse.json({ 
+            resume: { id: resumeRef.id, title, data, markdown, userId } 
+        });
+    } catch (error: any) {
+        console.error('[API Resumes] POST Error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 }
 
 // DELETE: delete a resume
@@ -79,14 +88,19 @@ export async function DELETE(req: Request) {
 
     if (!id) return NextResponse.json({ error: 'Resume ID required' }, { status: 400 });
 
-    // Verify ownership
-    const resume = await prisma.resume.findFirst({ where: { id, userId } });
-    if (!resume) return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
+    try {
+        const resumeRef = adminDb.collection('resumes').doc(id);
+        const resumeDoc = await resumeRef.get();
 
-    await prisma.resume.delete({ where: { id } });
-    revalidateTag(`resumes-${userId}`, {});
-    revalidateTag(`resume-${id}`, {});
-    return NextResponse.json({ success: true });
+        if (!resumeDoc.exists) return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
+        if (resumeDoc.data()?.userId !== userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+
+        await resumeRef.delete();
+        return NextResponse.json({ success: true });
+    } catch (error: any) {
+        console.error('[API Resumes] DELETE Error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 }
 
 // PUT: update an existing resume
@@ -99,21 +113,29 @@ export async function PUT(req: Request) {
 
     if (!id) return NextResponse.json({ error: 'Resume ID required' }, { status: 400 });
 
-    // Verify ownership
-    const existing = await prisma.resume.findFirst({ where: { id, userId } });
-    if (!existing) return NextResponse.json({ error: 'Resume not found or unauthorized' }, { status: 404 });
+    try {
+        const resumeRef = adminDb.collection('resumes').doc(id);
+        const resumeDoc = await resumeRef.get();
 
-    const updated = await prisma.resume.update({
-        where: { id },
-        data: {
-            title: title || existing.title,
-            data: data || existing.data,
-            markdown: markdown !== undefined ? markdown : existing.markdown,
-        },
-    });
+        if (!resumeDoc.exists) return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
+        if (resumeDoc.data()?.userId !== userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
 
-    revalidateTag(`resumes-${userId}`, {});
-    revalidateTag(`resume-${id}`, {});
+        const updateData: any = {
+            updatedAt: new Date().toISOString()
+        };
+        if (title !== undefined) updateData.title = title;
+        if (data !== undefined) updateData.data = data;
+        if (markdown !== undefined) updateData.markdown = markdown;
 
-    return NextResponse.json({ resume: updated });
+        await resumeRef.update(updateData);
+
+        const updated = await resumeRef.get();
+
+        return NextResponse.json({ 
+            resume: { id: updated.id, ...updated.data() } 
+        });
+    } catch (error: any) {
+        console.error('[API Resumes] PUT Error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import prisma from '@/lib/prisma';
+import { adminDb } from '@/lib/firebase-admin';
 
 // GET: fetch user profile
 export async function GET() {
@@ -9,12 +9,16 @@ export async function GET() {
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const userId = (session.user as any).id;
-    const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { id: true, name: true, email: true, credits: true, createdAt: true },
-    });
+    try {
+        const userDoc = await adminDb.collection('users').doc(userId).get();
+        if (!userDoc.exists) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-    return NextResponse.json({ user });
+        return NextResponse.json({ 
+            user: { id: userDoc.id, ...userDoc.data() } 
+        });
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 }
 
 // PATCH: update profile
@@ -23,21 +27,35 @@ export async function PATCH(req: Request) {
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const userId = (session.user as any).id;
-    const { name, email } = await req.json();
+    try {
+        const { name, email } = await req.json();
 
-    // Check if email is taken by another user
-    if (email) {
-        const existing = await prisma.user.findFirst({ where: { email, NOT: { id: userId } } });
-        if (existing) return NextResponse.json({ error: 'Email already in use' }, { status: 409 });
+        // Check if email is taken by another user
+        if (email) {
+            const existingSnap = await adminDb.collection('users')
+                .where('email', '==', email)
+                .get();
+            
+            const otherUser = existingSnap.docs.find(doc => doc.id !== userId);
+            if (otherUser) return NextResponse.json({ error: 'Email already in use' }, { status: 409 });
+        }
+
+        const userRef = adminDb.collection('users').doc(userId);
+        const updateData: any = {
+            updatedAt: new Date().toISOString()
+        };
+        if (name) updateData.name = name;
+        if (email) updateData.email = email;
+
+        await userRef.update(updateData);
+        const updated = await userRef.get();
+
+        return NextResponse.json({ 
+            user: { id: updated.id, ...updated.data() } 
+        });
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
-
-    const updated = await prisma.user.update({
-        where: { id: userId },
-        data: { ...(name && { name }), ...(email && { email }) },
-        select: { id: true, name: true, email: true },
-    });
-
-    return NextResponse.json({ user: updated });
 }
 
 // DELETE: delete account
@@ -46,7 +64,11 @@ export async function DELETE() {
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const userId = (session.user as any).id;
-    await prisma.user.delete({ where: { id: userId } });
-
-    return NextResponse.json({ success: true });
+    try {
+        await adminDb.collection('users').doc(userId).delete();
+        // Note: In a real app, you'd also delete their resumes, etc., or use a Cloud Function
+        return NextResponse.json({ success: true });
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 }

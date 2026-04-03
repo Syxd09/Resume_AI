@@ -1,4 +1,5 @@
-import prisma from '@/lib/prisma';
+import { adminDb } from './firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 
 // Credit costs for each action
 export const CREDIT_COSTS: Record<string, number> = {
@@ -27,58 +28,78 @@ export async function deductCredits(
     const cost = CREDIT_COSTS[action];
 
     if (cost === 0) {
-        const user = await prisma.user.findUnique({ where: { id: userId } });
-        return { success: true, remaining: user?.credits ?? 0 };
+        const userDoc = await adminDb.collection('users').doc(userId).get();
+        return { success: true, remaining: userDoc.data()?.credits ?? 0 };
     }
 
-    // Atomic: check + deduct in a transaction
-    const result = await prisma.$transaction(async (tx: any) => {
-        const user = await tx.user.findUnique({ where: { id: userId } });
-        if (!user) throw new Error('User not found');
-        if (user.credits < cost) {
-            return { success: false, remaining: user.credits, error: `Insufficient credits. Need ${cost}, have ${user.credits}.` };
-        }
+    try {
+        const result = await adminDb.runTransaction(async (transaction) => {
+            const userRef = adminDb.collection('users').doc(userId);
+            const userDoc = await transaction.get(userRef);
 
-        const updated = await tx.user.update({
-            where: { id: userId },
-            data: { credits: { decrement: cost } },
-        });
+            if (!userDoc.exists) {
+                throw new Error('User not found');
+            }
 
-        await tx.transaction.create({
-            data: {
+            const currentCredits = userDoc.data()?.credits ?? 0;
+
+            if (currentCredits < cost) {
+                return { 
+                    success: false, 
+                    remaining: currentCredits, 
+                    error: `Insufficient credits. Need ${cost}, have ${currentCredits}.` 
+                };
+            }
+
+            const newCredits = currentCredits - cost;
+
+            // Update user credits
+            transaction.update(userRef, { 
+                credits: newCredits,
+                updatedAt: new Date().toISOString()
+            });
+
+            // Log transaction
+            const transRef = adminDb.collection('transactions').doc();
+            transaction.set(transRef, {
                 userId,
                 amount: -cost,
                 type: 'USAGE',
                 description,
-            },
+                createdAt: new Date().toISOString()
+            });
+
+            return { success: true, remaining: newCredits };
         });
 
-        return { success: true, remaining: updated.credits };
-    });
-
-    return result;
+        return result;
+    } catch (error: any) {
+        console.error('[Credits] Deduction error:', error);
+        return { success: false, remaining: 0, error: error.message };
+    }
 }
 
 /**
  * Check if a user has enough credits for an action WITHOUT deducting.
- * Use this before expensive operations, then call deductCredits after success.
  */
 export async function checkCredits(
     userId: string,
     action: keyof typeof CREDIT_COSTS
 ): Promise<{ allowed: boolean; balance: number; cost: number }> {
     const cost = CREDIT_COSTS[action];
-    if (cost === 0) {
-        const user = await prisma.user.findUnique({ where: { id: userId } });
-        return { allowed: true, balance: user?.credits ?? 0, cost: 0 };
-    }
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) return { allowed: false, balance: 0, cost };
-    return { allowed: user.credits >= cost, balance: user.credits, cost };
+    const userDoc = await adminDb.collection('users').doc(userId).get();
+    
+    if (!userDoc.exists) return { allowed: false, balance: 0, cost };
+    
+    const balance = userDoc.data()?.credits ?? 0;
+    
+    if (cost === 0) return { allowed: true, balance, cost: 0 };
+    
+    return { allowed: balance >= cost, balance, cost };
 }
 
 /**
- * Refund credits back to a user (e.g., if an operation failed after deduction).
+ * Refund credits back to a user.
  */
 export async function refundCredits(
     userId: string,
@@ -86,22 +107,38 @@ export async function refundCredits(
     reason: string
 ): Promise<CreditResult> {
     const cost = CREDIT_COSTS[action];
+    const userRef = adminDb.collection('users').doc(userId);
+
     if (cost === 0) {
-        const user = await prisma.user.findUnique({ where: { id: userId } });
-        return { success: true, remaining: user?.credits ?? 0 };
+        const userDoc = await userRef.get();
+        return { success: true, remaining: userDoc.data()?.credits ?? 0 };
     }
-    const updated = await prisma.user.update({
-        where: { id: userId },
-        data: { credits: { increment: cost } },
-    });
-    await prisma.transaction.create({
-        data: { userId, amount: cost, type: 'REFUND', description: `Refund: ${reason}` },
-    });
-    return { success: true, remaining: updated.credits };
+
+    try {
+        await userRef.update({
+            credits: FieldValue.increment(cost),
+            updatedAt: new Date().toISOString()
+        });
+
+        const transRef = adminDb.collection('transactions').doc();
+        await transRef.set({
+            userId,
+            amount: cost,
+            type: 'REFUND',
+            description: `Refund: ${reason}`,
+            createdAt: new Date().toISOString()
+        });
+
+        const userDoc = await userRef.get();
+        return { success: true, remaining: userDoc.data()?.credits ?? 0 };
+    } catch (error: any) {
+        console.error('[Credits] Refund error:', error);
+        return { success: false, remaining: 0, error: error.message };
+    }
 }
 
 /**
- * Add credits to a user's account (for purchases / bonuses).
+ * Add credits to a user's account.
  */
 export async function addCredits(
     userId: string,
@@ -109,40 +146,64 @@ export async function addCredits(
     type: 'PURCHASE' | 'BONUS',
     description: string
 ): Promise<CreditResult> {
-    const updated = await prisma.user.update({
-        where: { id: userId },
-        data: { credits: { increment: amount } },
-    });
+    const userRef = adminDb.collection('users').doc(userId);
 
-    await prisma.transaction.create({
-        data: {
+    try {
+        await userRef.update({
+            credits: FieldValue.increment(amount),
+            updatedAt: new Date().toISOString()
+        });
+
+        const transRef = adminDb.collection('transactions').doc();
+        await transRef.set({
             userId,
             amount,
             type,
             description,
-        },
-    });
+            createdAt: new Date().toISOString()
+        });
 
-    return { success: true, remaining: updated.credits };
+        const userDoc = await userRef.get();
+        return { success: true, remaining: userDoc.data()?.credits ?? 0 };
+    } catch (error: any) {
+        console.error('[Credits] Add credits error:', error);
+        return { success: false, remaining: 0, error: error.message };
+    }
 }
 
 /**
  * Get a user's credit balance and recent transactions.
  */
 export async function getUserCredits(userId: string) {
-    const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { credits: true },
-    });
+    try {
+        const userDoc = await adminDb.collection('users').doc(userId).get();
+        
+        const transactionsSnap = await adminDb.collection('transactions')
+            .where('userId', '==', userId)
+            // .orderBy('createdAt', 'desc') // Temporarily disabled: requires Firestore index
+            .limit(20)
+            .get();
 
-    const transactions = await prisma.transaction.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-    });
+        const transactions = transactionsSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
 
-    return {
-        balance: user?.credits ?? 0,
-        transactions,
-    };
+        // Sort manually for now to avoid requiring a composite index immediately
+        transactions.sort((a: any, b: any) => 
+            new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
+
+        return {
+            balance: userDoc.data()?.credits ?? 0,
+            transactions,
+        };
+    } catch (error: any) {
+        console.error('[Credits] getUserCredits error:', error);
+        return {
+            balance: 0,
+            transactions: [],
+            error: error.message
+        };
+    }
 }
