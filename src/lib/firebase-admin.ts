@@ -13,19 +13,20 @@ function initializeFirebaseAdmin(): admin.app.App {
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
 
     if (privateKey) {
-        // 1. Convert literal "\\n" to actual newlines
-        // 2. Remove surrounding literal quotes that Vercel sometimes adds
-        // 3. Ensure the string hasn't been globally compressed (strip any whitespace at start/end)
+        // 1. Clean the string of all potential formatting quirks:
+        // - Convert literal "\\n" to actual newlines
+        // - Strip Windows-specific carriage returns (\r) which break PEM headers
+        // - Remove surrounding quotes added by some .env loaders
         privateKey = privateKey
             .replace(/\\n/g, '\n')
+            .replace(/\r/g, '')
             .replace(/^"(.*)"$/, '$1')
             .trim();
             
-        // 4. Critical fix for some Vercel/ENV setups: 
-        // If the key starts with '---BEGIN' but doesn't have internal newlines (it was pasted on one line), 
-        // we must manually re-insert them every ~64 chars or at least between the headers.
-        if (privateKey.includes('-----BEGIN PRIVATE KEY-----') && !privateKey.includes('\n', 27)) {
-             console.log('[Firebase Admin] Detected compressed one-line private key. Attempting reconstruction...');
+        // 2. Ensure basic PEM structure:
+        // If it starts with the header but has no newlines in the body (one-liner),
+        // we must at least separate the header and footer for many Node.js versions.
+        if (privateKey.startsWith('-----BEGIN PRIVATE KEY-----') && !privateKey.includes('\n', 27)) {
              privateKey = privateKey
                  .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
                  .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
