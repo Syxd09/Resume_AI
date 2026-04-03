@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { getAdminAuth, getAdminDb } from '@/lib/firebase-admin';
 import bcrypt from 'bcryptjs';
 
 export async function PATCH(req: Request) {
@@ -21,7 +21,9 @@ export async function PATCH(req: Request) {
     }
 
     try {
-        const userRef = adminDb.collection('users').doc(userId);
+        const db = getAdminDb();
+        const auth = getAdminAuth();
+        const userRef = db.collection('users').doc(userId);
         const userDoc = await userRef.get();
         const userData = userDoc.data();
 
@@ -38,7 +40,7 @@ export async function PATCH(req: Request) {
 
         // Update both Firebase Auth and Firestore
         await Promise.all([
-            adminAuth.updateUser(userId, { password: newPassword }),
+            auth.updateUser(userId, { password: newPassword }),
             userRef.update({ password: hashed, updatedAt: new Date().toISOString() })
         ]);
 

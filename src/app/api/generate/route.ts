@@ -1,241 +1,131 @@
 export const dynamic = 'force-dynamic';
-import { callAI, callAIStream } from '@/lib/ai';
+import { callAI } from '@/lib/ai';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { deductCredits, checkCredits } from '@/lib/credits';
-import { adminDb } from '@/lib/firebase-admin';
+import { getAdminDb } from '@/lib/firebase-admin';
 
 export async function POST(req: Request) {
     try {
-        // Auth check
+        const { personalInfo, experience, education, skills, projects, targetRole } = await req.json();
+
+        if (!personalInfo || !experience || !education || !skills || !projects || !targetRole) {
+            return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
+        }
+
         const session = await getServerSession(authOptions);
         if (!session?.user) {
-            return NextResponse.json({ error: 'Please sign in to generate a resume.' }, { status: 401 });
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
         const userId = (session.user as any).id;
+        const db = getAdminDb();
 
-        // Pre-check credits (don't deduct yet — we deduct only after success)
-        try {
-            const creditCheck = await checkCredits(userId, 'GENERATE_RESUME');
-            if (!creditCheck.allowed) {
-                return NextResponse.json({ error: `Insufficient credits. Need ${creditCheck.cost}, have ${creditCheck.balance}.` }, { status: 402 });
-            }
-        } catch (creditErr: any) {
-            console.error('Credit check failed:', creditErr);
-            return NextResponse.json({ error: 'Unable to verify credit balance. Please try again.' }, { status: 500 });
-        }
-
-        const body = await req.json();
-        const { personal, summary, targetRole, jobDescription, skills, experience, projects, education, certifications, languages, template } = body;
-
-        if (!personal?.fullName || !targetRole) {
-            return NextResponse.json({ error: 'Missing required fields (name, target role)' }, { status: 400 });
+        const creditCheck = await checkCredits(userId, 'GENERATE_RESUME');
+        if (!creditCheck.allowed) {
+            return NextResponse.json({ error: `Insufficient credits. Need ${creditCheck.cost}, have ${creditCheck.balance}.` }, { status: 402 });
         }
 
         const apiKey = process.env.OPENROUTER_API_KEY;
         if (!apiKey) {
-            return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+            return NextResponse.json({ error: 'Config error' }, { status: 500 });
         }
 
-        // Build structured sections
-        const contactLine = [personal.email, personal.phone, personal.location].filter(Boolean).join(' | ');
-        const linksLine = [personal.linkedin, personal.github, personal.portfolio].filter(Boolean).join(' | ');
+        const prompt = `You are a world-class resume writer and career expert. Create a highly professional, modern, and ATS-optimized resume using the provided details. Use the target role to tailor the tone and keywords.
 
-        const skillsText = Array.isArray(skills) ? skills.join(', ') : (skills || 'N/A');
+PERSONAL INFO:
+${JSON.stringify(personalInfo)}
 
-        const experienceText = Array.isArray(experience) && experience.length > 0
-            ? experience.map((e: any) => {
-                const header = `**${e.jobTitle || 'Role'}** at **${e.company || 'Company'}** (${e.startDate || ''}–${e.endDate || 'Present'})${e.location ? ', ' + e.location : ''}`;
-                const bullets = Array.isArray(e.bullets) ? e.bullets.filter(Boolean).map((b: string) => `- ${b}`).join('\n') : '';
-                return `${header}\n${bullets}`;
-            }).join('\n\n')
-            : 'N/A';
+TARGET ROLE:
+${targetRole}
 
-        const projectsText = Array.isArray(projects) && projects.length > 0
-            ? projects.map((p: any) => {
-                return `**${p.name}** (${p.techStack || 'Various'}): ${p.description || 'No description'}${p.link ? ' — ' + p.link : ''}`;
-            }).join('\n')
-            : '';
+EXPERIENCE:
+${JSON.stringify(experience)}
 
-        const educationText = Array.isArray(education) && education.length > 0
-            ? education.map((e: any) => {
-                return `**${e.degree || 'Degree'}**, ${e.institution || 'Institution'}, ${e.year || ''}${e.gpa ? ' (GPA: ' + e.gpa + ')' : ''}`;
-            }).join('\n')
-            : 'N/A';
+EDUCATION:
+${JSON.stringify(education)}
 
-        const certsText = Array.isArray(certifications) && certifications.length > 0
-            ? certifications.join(', ')
-            : '';
+SKILLS:
+${JSON.stringify(skills)}
 
-        const langsText = Array.isArray(languages) && languages.length > 0
-            ? languages.join(', ')
-            : '';
+PROJECTS:
+${JSON.stringify(projects)}
 
-        // JD keyword extraction instruction
-        const jdInstruction = jobDescription
-            ? `\n\nTARGET JOB DESCRIPTION (for keyword alignment only):
----
-${jobDescription.substring(0, 2500)}
----
-Use the JD to guide keyword ORDERING and PHRASING. But NEVER add skills or tools the candidate didn't provide.`
-            : '';
+Rules:
+1. Synthesize a powerful "Professional Summary" (3-4 sentences).
+2. For each experience/project role, create 3-5 concise, impact-driven bullet points starting with strong action verbs. Quantify achievements where possible.
+3. Include relevant technical and soft skills.
+4. Ensure the output is high-quality, professional, and grammatically perfect.
+5. Return ONLY the modified JSON structure.
 
-        const prompt = `You are a professional resume editor. Your ONLY job is to improve the PHRASING and STRUCTURE of the candidate's existing resume data. You are NOT creating new content.
-
-${jdInstruction}
-
-=== ⛔ ABSOLUTE TRUTHFULNESS RULES (HIGHEST PRIORITY — VIOLATING THESE IS UNACCEPTABLE) ===
-
-1. NEVER invent, fabricate, or hallucinate ANY:
-   - Skills or technologies the candidate did not list
-   - Tools, frameworks, or platforms not mentioned in their data
-   - Metrics, numbers, percentages, or dollar amounts they did not provide
-   - Job responsibilities or achievements they did not describe
-   - Company names, titles, or dates they did not provide
-   - Certifications or qualifications they did not mention
-
-2. You may ONLY:
-   - Reword existing bullets for better impact (stronger verbs, clearer structure)
-   - Rearrange information for better flow
-   - Fix grammar and spelling
-   - Ensure bullets start with action verbs
-   - Write a summary that ONLY references skills/experience the candidate actually has
-   - Reorder the skills list to prioritize JD-relevant ones FIRST
-
-3. If the candidate provided a metric (e.g., "500K+ records"), keep that EXACT metric
-4. If the candidate did NOT provide a metric, do NOT invent one — just improve the phrasing
-5. The candidate's tech stack for each project/experience is SACRED — use their exact tools
-
-=== RESUME IMPROVEMENT RULES ===
-
-📝 PROFESSIONAL SUMMARY:
-- Write 2-3 sentences based ONLY on what the candidate provided
-- Sentence 1: "[Their actual title] with experience in [their actual domain based on experience data]"
-- Sentence 2: Their actual technical expertise (list only skills THEY provided)
-- Sentence 3: One real achievement from their experience data (use their actual metric if they gave one)
-- ONLY mention technologies and tools that appear in their skills list or experience bullets
-- Keep it concise and factual
-
-💼 EXPERIENCE BULLETS:
-- Start each bullet with a strong past-tense action verb (Developed, Designed, Implemented, Built, Processed, etc.)
-- PRESERVE the candidate's exact claims — if they said "500K+ records", keep "500K+ records"
-- PRESERVE the candidate's exact tech stack — if they said "BigQuery", don't change to "Snowflake"
-- Only improve SENTENCE STRUCTURE, not the CONTENT
-- Each experience entry: keep the SAME NUMBER of bullets the candidate provided (do not add or remove bullets)
-- If a bullet is vague (e.g., "Worked on data pipeline"), make it specific using ONLY information from that same experience entry
-
-🛠️ SKILLS:
-- Return the candidate's EXACT skills list
-- You may reorder them to put JD-relevant skills first
-- You may normalize formatting (e.g., "python" → "Python", "GCP" → "Google Cloud Platform (GCP)")
-- Do NOT add skills the candidate didn't list
-- Do NOT remove any skills the candidate listed
-
-📁 PROJECTS:
-- Keep the candidate's EXACT tech stack (shown in parentheses)
-- Improve the description sentence structure only
-- Start with an action verb
-- PRESERVE any metrics the candidate included
-- Do NOT add technologies or outcomes they didn't mention
-
-=== CANDIDATE DATA ===
-
-Target Role: ${targetRole}
-Summary: ${summary || 'None provided — write one based ONLY on the experience and skills listed below.'}
-Skills: ${skillsText}
-
-Experience:
-${experienceText}
-
-Projects:
-${projectsText}
-
-=== OUTPUT FORMAT ===
-
-Return ONLY valid JSON. No markdown, no code blocks, no explanations.
+JSON Structure:
 {
-  "summary": "2-3 sentence summary using ONLY facts from the candidate's data",
-  "skills": ["Their exact skills, reordered for relevance"],
+  "professionalSummary": "...",
   "experience": [
-    { "id": "experience-id", "bullets": ["Improved version of their EXACT bullet", "..."] }
+    {
+      "company": "...",
+      "role": "...",
+      "period": "...",
+      "bullets": ["Bullet 1", "Bullet 2"]
+    }
   ],
-  "projects": [
-    { "id": "project-id", "description": "Improved version of their EXACT description" }
-  ]
+  "education": [...SAME AS INPUT...],
+  "skills": [...SAME AS INPUT...],
+  "projects": [...SAME AS INPUT...]
 }
+`;
 
-Experience IDs: ${experience.map((e: any) => e.id).join(', ')}
-Project IDs: ${projects.map((p: any) => p.id).join(', ')}
-
-REMEMBER: You are an EDITOR, not a WRITER. Improve their words, don't replace them with fiction.
-Return ONLY valid JSON. Nothing else.`;
-
-        let aiResponse: any;
-        try {
-            aiResponse = await callAI({
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.3,
-                max_tokens: 3000,
-            });
-        } catch (aiErr: any) {
-            console.error('AI call failed:', aiErr.message);
-            return NextResponse.json({ error: aiErr.message || 'All AI models are currently unavailable. Please try again later.' }, { status: 503 });
-        }
-
-        let content = aiResponse.content;
-        content = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-
-        let tailoredData: any;
-        try {
-            tailoredData = JSON.parse(content);
-        } catch (e) {
-            console.error('Failed to parse tailored resume JSON:', content.substring(0, 500));
-            return NextResponse.json({ error: 'AI generated invalid data. Please try again.' }, { status: 500 });
-        }
-
-        // Apply tailored data to the original form body
-        const finalResumeData = { ...body };
-        if (tailoredData.summary) finalResumeData.summary = tailoredData.summary;
-        if (Array.isArray(tailoredData.skills)) finalResumeData.skills = tailoredData.skills;
-
-        if (Array.isArray(tailoredData.experience)) {
-            finalResumeData.experience = finalResumeData.experience.map((exp: any) => {
-                const match = tailoredData.experience.find((te: any) => te.id === exp.id);
-                return match ? { ...exp, bullets: match.bullets } : exp;
-            });
-        }
-
-        if (Array.isArray(tailoredData.projects)) {
-            finalResumeData.projects = finalResumeData.projects.map((proj: any) => {
-                const match = tailoredData.projects.find((tp: any) => tp.id === proj.id);
-                return match ? { ...proj, description: match.description } : proj;
-            });
-        }
-
-        let resumeId = null;
-        try {
-            await deductCredits(userId, 'GENERATE_RESUME', 'Generated ATS resume');
-
-            const now = new Date().toISOString();
-            const resumeRef = await adminDb.collection('resumes').add({
-                userId,
-                title: `${targetRole} Resume`,
-                data: finalResumeData,
-                createdAt: now,
-                updatedAt: now,
-            });
-            resumeId = resumeRef.id;
-        } catch (dbErr) {
-            console.error('Failed to save tailored resume or deduct credits:', dbErr);
-        }
-
-        return NextResponse.json({
-            data: finalResumeData,
-            resumeId: resumeId
+        const aiResult = await callAI({
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.7,
+            max_tokens: 2000,
         });
-    } catch (error) {
-        console.error('Generate API error:', error);
-        return NextResponse.json({ error: 'An unexpected error occurred' }, { status: 500 });
+
+        const resumeData = aiResult.content;
+
+        if (!resumeData) {
+            return NextResponse.json({ error: 'AI returned an empty response. Please try again.' }, { status: 500 });
+        }
+
+        let parsedResumeData;
+        try {
+            const cleanJson = resumeData.replace(/```json|```/g, '').trim();
+            parsedResumeData = JSON.parse(cleanJson);
+        } catch (e) {
+            console.error('Resume JSON parse error:', e);
+            return NextResponse.json({ error: 'Failed to synthesize resume. Please try again.' }, { status: 500 });
+        }
+
+        // Add additional metadata from inputs
+        const finalizedData = {
+            ...parsedResumeData,
+            personalInfo,
+            targetRole,
+        };
+
+        // SUCCESS — Deduct credits using atomic transaction
+        const creditResult = await deductCredits(userId, 'GENERATE_RESUME', `Generated resume for: ${targetRole}`);
+        
+        if (!creditResult.success) {
+            return NextResponse.json({ error: creditResult.error }, { status: 402 });
+        }
+
+        // Save to Firestore
+        const now = new Date().toISOString();
+        const resumeRef = await db.collection('resumes').add({
+            userId,
+            title: `Resume - ${targetRole} (${new Date().toLocaleDateString()})`,
+            data: finalizedData,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        return NextResponse.json({ 
+            id: resumeRef.id,
+            resume: finalizedData 
+        });
+    } catch (err) {
+        console.error('Resume generation error:', err);
+        return NextResponse.json({ error: 'Unexpected error' }, { status: 500 });
     }
 }

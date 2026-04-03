@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { adminDb } from '@/lib/firebase-admin';
+import { getAdminDb } from '@/lib/firebase-admin';
 
 export async function POST(req: Request) {
     try {
@@ -18,8 +18,9 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Provider is required' }, { status: 400 });
         }
 
+        const db = getAdminDb();
         // Attempt to delete the account binding from Firestore 'accounts' collection
-        const accountsRef = adminDb.collection('accounts');
+        const accountsRef = db.collection('accounts');
         const querySnapshot = await accountsRef
             .where('userId', '==', userId)
             .where('provider', '==', provider.toLowerCase())
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'No matching account found to disconnect.' }, { status: 404 });
         }
 
-        const batch = adminDb.batch();
+        const batch = db.batch();
         querySnapshot.docs.forEach((doc) => {
             batch.delete(doc.ref);
         });

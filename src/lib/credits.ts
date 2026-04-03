@@ -1,4 +1,4 @@
-import { adminDb } from './firebase-admin';
+import { getAdminDb } from './firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 
 // Credit costs for each action
@@ -26,15 +26,16 @@ export async function deductCredits(
     description: string
 ): Promise<CreditResult> {
     const cost = CREDIT_COSTS[action];
+    const db = getAdminDb();
 
     if (cost === 0) {
-        const userDoc = await adminDb.collection('users').doc(userId).get();
+        const userDoc = await db.collection('users').doc(userId).get();
         return { success: true, remaining: userDoc.data()?.credits ?? 0 };
     }
 
     try {
-        const result = await adminDb.runTransaction(async (transaction) => {
-            const userRef = adminDb.collection('users').doc(userId);
+        const result = await db.runTransaction(async (transaction) => {
+            const userRef = db.collection('users').doc(userId);
             const userDoc = await transaction.get(userRef);
 
             if (!userDoc.exists) {
@@ -60,7 +61,7 @@ export async function deductCredits(
             });
 
             // Log transaction
-            const transRef = adminDb.collection('transactions').doc();
+            const transRef = db.collection('transactions').doc();
             transaction.set(transRef, {
                 userId,
                 amount: -cost,
@@ -87,7 +88,8 @@ export async function checkCredits(
     action: keyof typeof CREDIT_COSTS
 ): Promise<{ allowed: boolean; balance: number; cost: number }> {
     const cost = CREDIT_COSTS[action];
-    const userDoc = await adminDb.collection('users').doc(userId).get();
+    const db = getAdminDb();
+    const userDoc = await db.collection('users').doc(userId).get();
     
     if (!userDoc.exists) return { allowed: false, balance: 0, cost };
     
@@ -107,7 +109,8 @@ export async function refundCredits(
     reason: string
 ): Promise<CreditResult> {
     const cost = CREDIT_COSTS[action];
-    const userRef = adminDb.collection('users').doc(userId);
+    const db = getAdminDb();
+    const userRef = db.collection('users').doc(userId);
 
     if (cost === 0) {
         const userDoc = await userRef.get();
@@ -120,7 +123,7 @@ export async function refundCredits(
             updatedAt: new Date().toISOString()
         });
 
-        const transRef = adminDb.collection('transactions').doc();
+        const transRef = db.collection('transactions').doc();
         await transRef.set({
             userId,
             amount: cost,
@@ -146,7 +149,8 @@ export async function addCredits(
     type: 'PURCHASE' | 'BONUS',
     description: string
 ): Promise<CreditResult> {
-    const userRef = adminDb.collection('users').doc(userId);
+    const db = getAdminDb();
+    const userRef = db.collection('users').doc(userId);
 
     try {
         await userRef.update({
@@ -154,7 +158,7 @@ export async function addCredits(
             updatedAt: new Date().toISOString()
         });
 
-        const transRef = adminDb.collection('transactions').doc();
+        const transRef = db.collection('transactions').doc();
         await transRef.set({
             userId,
             amount,
@@ -175,10 +179,11 @@ export async function addCredits(
  * Get a user's credit balance and recent transactions.
  */
 export async function getUserCredits(userId: string) {
+    const db = getAdminDb();
     try {
-        const userDoc = await adminDb.collection('users').doc(userId).get();
+        const userDoc = await db.collection('users').doc(userId).get();
         
-        const transactionsSnap = await adminDb.collection('transactions')
+        const transactionsSnap = await db.collection('transactions')
             .where('userId', '==', userId)
             // .orderBy('createdAt', 'desc') // Temporarily disabled: requires Firestore index
             .limit(20)

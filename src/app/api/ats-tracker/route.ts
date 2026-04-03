@@ -3,215 +3,146 @@ import { callAI } from '@/lib/ai';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { checkCredits, deductCredits } from '@/lib/credits';
-import { adminDb } from '@/lib/firebase-admin';
-import { z } from 'zod';
-import { runATSAnalysis } from '@/lib/ats-engine';
+import { getAdminDb } from '@/lib/firebase-admin';
 
-// GET: return all ATS scores for the user, grouped by resume
 export async function GET() {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user) {
+        const session: any = await getServerSession(authOptions);
+        if (!session?.user?.id) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
-        const userId = (session.user as any).id;
 
-        // Fetch scores
-        const scoresSnap = await adminDb.collection('ats_scores')
+        const userId = session.user.id;
+        const db = getAdminDb();
+
+        const resumesSnap = await db.collection('resumes')
             .where('userId', '==', userId)
-            // .orderBy('createdAt', 'desc') // Requires index
-            .limit(50)
-            .get();
-
-        const scores = scoresSnap.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-        }));
-
-        // Sort manually
-        scores.sort((a: any, b: any) => 
-            new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-        );
-
-        // Also get user's resumes for the "Run Analysis" picker
-        const resumesSnap = await adminDb.collection('resumes')
-            .where('userId', '==', userId)
-            // .orderBy('createdAt', 'desc') // Requires index
             .get();
 
         const resumes = resumesSnap.docs.map(doc => ({
             id: doc.id,
-            title: doc.data().title
+            ...doc.data(),
         }));
 
-        return NextResponse.json({ scores, resumes });
-    } catch (err: any) {
-        console.error('ATS tracker GET error:', err);
-        return NextResponse.json({ error: err.message || 'Unexpected error' }, { status: 500 });
+        const trackingsSnap = await db.collection('trackings')
+            .where('userId', '==', userId)
+            .get();
+
+        const trackings = trackingsSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+        }));
+
+        trackings.sort((a: any, b: any) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+
+        return NextResponse.json({ scores: trackings, resumes });
+    } catch (err) {
+        console.error('ATS Tracker GET error:', err);
+        return NextResponse.json({ error: 'Failed to fetch tracking data' }, { status: 500 });
     }
 }
 
-// Convert structured resume JSON into readable text for accurate ATS analysis
-function resumeDataToText(data: any): string {
-    const lines: string[] = [];
-    if (data.personal) {
-        const p = data.personal;
-        if (p.fullName) lines.push(p.fullName);
-        const contactParts = [p.location, p.phone, p.email, p.linkedin, p.github, p.portfolio].filter(Boolean);
-        if (contactParts.length > 0) lines.push(contactParts.join(' | '));
-    }
-    if (data.summary) lines.push('', 'Professional Summary', data.summary);
-    if (Array.isArray(data.skills) && data.skills.length > 0) lines.push('', 'Skills', data.skills.join(', '));
-    if (Array.isArray(data.experience) && data.experience.length > 0) {
-        lines.push('', 'Professional Experience');
-        for (const exp of data.experience) {
-            lines.push(`${exp.jobTitle || 'Role'} at ${exp.company || 'Company'}`);
-            if (exp.startDate || exp.endDate) lines.push(`${exp.startDate || ''} - ${exp.endDate || 'Present'}`);
-            if (exp.location) lines.push(exp.location);
-            if (Array.isArray(exp.bullets)) {
-                for (const b of exp.bullets) if (b && b.trim()) lines.push(`- ${b.trim()}`);
-            }
-        }
-    }
-    if (Array.isArray(data.projects) && data.projects.length > 0) {
-        lines.push('', 'Projects');
-        for (const proj of data.projects) {
-            lines.push(`${proj.name || 'Project'}${proj.techStack ? ' (' + proj.techStack + ')' : ''}`);
-            if (proj.description) lines.push(proj.description);
-            if (proj.link) lines.push(proj.link);
-        }
-    }
-    if (Array.isArray(data.education) && data.education.length > 0) {
-        lines.push('', 'Education');
-        for (const edu of data.education) {
-            lines.push(`${edu.degree || 'Degree'}, ${edu.institution || 'Institution'}, ${edu.year || ''}`);
-            if (edu.gpa) lines.push(`GPA: ${edu.gpa}`);
-        }
-    }
-    if (Array.isArray(data.certifications) && data.certifications.length > 0) lines.push('', 'Certifications', data.certifications.join(', '));
-    if (Array.isArray(data.languages) && data.languages.length > 0) lines.push('', 'Languages', data.languages.join(', '));
-    if (data.targetRole) lines.push('', `Target Role: ${data.targetRole}`);
-    return lines.join('\n');
-}
-
-// POST: run ATS analysis on a resume + JD, save score
 export async function POST(req: Request) {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        const userId = (session.user as any).id;
+        const session: any = await getServerSession(authOptions);
+        if (!session?.user?.id) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
 
+        const userId = session.user.id;
         const { resumeId, resumeText, jobDescription } = await req.json();
-        if (!jobDescription) return NextResponse.json({ error: 'Job description is required' }, { status: 400 });
 
-        let resumeContent = '';
+        if ((!resumeId && !resumeText) || !jobDescription) {
+            return NextResponse.json({ error: 'Missing resume or job description' }, { status: 400 });
+        }
+
+        const db = getAdminDb();
+        let resumeContent = resumeText || '';
         let resumeTitle = 'Uploaded Resume';
-        let linkedResumeId = resumeId || null;
 
         if (resumeId) {
-            const resumeDoc = await adminDb.collection('resumes').doc(resumeId).get();
-            if (!resumeDoc.exists) return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
-            
-            const resume = resumeDoc.data()!;
-            resumeTitle = resume.title;
-            if (resume.data && typeof resume.data === 'object' && resume.data.personal) {
-                resumeContent = resumeDataToText(resume.data);
-            } else if (resume.markdown) {
-                resumeContent = resume.markdown;
-            } else {
-                return NextResponse.json({ error: 'Resume is empty' }, { status: 404 });
+            const resumeDoc = await db.collection('resumes').doc(resumeId).get();
+            if (resumeDoc.exists) {
+                const data = resumeDoc.data()!;
+                resumeContent = JSON.stringify(data.data || data.markdown || '');
+                resumeTitle = data.title || 'Selected Resume';
             }
-        } else if (resumeText && resumeText.trim().length > 20) {
-            resumeContent = resumeText;
-            linkedResumeId = null;
-        } else {
-            return NextResponse.json({ error: 'Please select a resume or upload a document' }, { status: 400 });
         }
 
-        // Pre-check credits
-        const creditCheck = await checkCredits(userId, 'ATS_SCORE');
-        if (!creditCheck.allowed) {
-            return NextResponse.json({ error: `Insufficient credits. Need ${creditCheck.cost}, have ${creditCheck.balance}.` }, { status: 402 });
-        }
+        // 1. Perform AI Analysis
+        const prompt = `You are an ATS (Applicant Tracking System) Specialist. Perform a deep structural audit of this resume against the job description.
 
-        // Run Deterministic ATS Engine
-        const engineResult = runATSAnalysis(resumeContent, jobDescription);
+JOB DESCRIPTION:
+${jobDescription.substring(0, 2000)}
 
-        // Qualitative Commentary (Optional/AI)
-        const matchedKws = engineResult.keywords.filter(k => k.found).map(k => k.keyword);
-        const missingKws = engineResult.keywords.filter(k => !k.found).map(k => k.keyword);
+RESUME CONTENT:
+${resumeContent.substring(0, 4000)}
 
-        const prompt = `You are a professional resume reviewer. Qualitative commentary ONLY (JSON).
-Computed scores (ignore logic, just provide text): Score ${engineResult.overallScore}%, Keywords ${engineResult.keywordScore}%.
-Focus on feedback for: ${missingKws.join(', ')}`;
+RULES:
+1. Provide a score from 0-100.
+2. matchedKeywords: list of keywords found.
+3. missingKeywords: list of keywords missing.
+4. suggestions: list of improvement tips.
+5. Provide component scores for: keywordScore, sectionScore, bulletScore, readabilityScore, formatScore.
+6. overallVerdict: A 2-sentence professional summary of the match.
 
-        let aiCommentary: any = {};
+RETURN ONLY VALID JSON matching this schema:
+{
+  "score": number,
+  "keywordScore": number,
+  "sectionScore": number,
+  "bulletScore": number,
+  "readabilityScore": number,
+  "formatScore": number,
+  "matched": ["string"],
+  "missing": ["string"],
+  "suggestions": ["string"],
+  "overallVerdict": "string"
+}
+`;
+
+        const aiResult = await callAI({
+            messages: [
+                { role: 'system', content: 'You are a career terminal. Return ONLY valid JSON.' },
+                { role: 'user', content: prompt }
+            ],
+            temperature: 0.3,
+        });
+
+        let detailedResult;
         try {
-            const aiResult = await callAI({
-                messages: [
-                    { role: 'system', content: 'Return ONLY valid JSON: {"overallVerdict":"string","suggestions":["string"],"strengthAreas":["string"],"formatIssues":["string"],"sectionFeedback":{"contactInfo":"string","summary":"string","experience":"string","skills":"string","education":"string","projects":"string","formatting":"string"}}' },
-                    { role: 'user', content: prompt }
-                ],
-                temperature: 0.2,
-                max_tokens: 800,
-            });
-            let content = aiResult.content;
-            content = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-            aiCommentary = JSON.parse(content);
-        } catch (err) {
-            console.error('AI Qualitative parse failed.', err);
+            const cleanJson = aiResult.content.replace(/```json|```/g, '').trim();
+            detailedResult = JSON.parse(cleanJson);
+        } catch (e) {
+            console.error('ATS Analysis Parse Error:', e);
+            return NextResponse.json({ error: 'Failed to synthesize audit result.' }, { status: 500 });
         }
 
-        // SUCCESS — deduct credits
-        await deductCredits(userId, 'ATS_SCORE', `ATS analysis: ${resumeTitle}`);
-
-        const fullResult = {
-            score: engineResult.overallScore,
-            keywordScore: engineResult.keywordScore,
-            sectionScore: engineResult.sectionScore,
-            bulletScore: engineResult.bulletScore,
-            readabilityScore: engineResult.readabilityScore,
-            formatScore: engineResult.formatScore,
-            matched: matchedKws,
-            missing: missingKws,
-            keywords: engineResult.keywords,
-            sections: engineResult.sections,
-            bulletAnalysis: engineResult.bulletAnalysis,
-            readabilityMetrics: engineResult.readabilityMetrics,
-            formatMetrics: engineResult.formatMetrics,
-            overallVerdict: aiCommentary.overallVerdict || '',
-            suggestions: aiCommentary.suggestions || [],
-            strengthAreas: aiCommentary.strengthAreas || [],
-            formatIssues: aiCommentary.formatIssues || [],
-            sectionFeedback: aiCommentary.sectionFeedback || {},
-        };
-
+        // 2. Save result to Firestore
         const now = new Date().toISOString();
-        const scoreEntry = {
-            resumeId: linkedResumeId,
+        const scoreData = {
             userId,
-            score: engineResult.overallScore,
-            jdSnippet: jobDescription.substring(0, 500),
-            matched: matchedKws,
-            missing: missingKws,
-            suggestions: aiCommentary.suggestions || [],
-            fullResult,
+            resume: { id: resumeId || 'external', title: resumeTitle },
+            score: detailedResult.score,
+            matched: detailedResult.matched,
+            missing: detailedResult.missing,
+            suggestions: detailedResult.suggestions,
+            jdSnippet: jobDescription.substring(0, 100),
+            fullResult: detailedResult,
             createdAt: now,
-            resume: { id: linkedResumeId || '', title: resumeTitle }
+            updatedAt: now,
         };
 
-        if (linkedResumeId) {
-            const savedDoc = await adminDb.collection('ats_scores').add(scoreEntry);
-            return NextResponse.json({ score: { id: savedDoc.id, ...scoreEntry }, result: fullResult });
-        } else {
-            return NextResponse.json({
-                score: { id: 'upload-' + Date.now(), ...scoreEntry },
-                result: fullResult
-            });
-        }
-    } catch (err: any) {
-        console.error('ATS tracker POST error:', err);
-        return NextResponse.json({ error: err.message || 'Unexpected error' }, { status: 500 });
+        const trackingRef = await db.collection('trackings').add(scoreData);
+
+        return NextResponse.json({ 
+            success: true, 
+            score: { id: trackingRef.id, ...scoreData },
+            result: detailedResult 
+        });
+
+    } catch (err) {
+        console.error('ATS Tracker POST error:', err);
+        return NextResponse.json({ error: 'Internal server error while analyzing' }, { status: 500 });
     }
 }

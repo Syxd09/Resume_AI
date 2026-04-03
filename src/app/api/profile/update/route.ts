@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { adminDb } from '@/lib/firebase-admin';
+import { getAdminDb } from '@/lib/firebase-admin';
 
 export async function POST(req: Request) {
     try {
@@ -13,37 +13,17 @@ export async function POST(req: Request) {
 
         const userId = (session.user as any).id;
         const body = await req.json();
-        const { name, phone, address, image } = body;
+        const db = getAdminDb();
 
-        const userRef = adminDb.collection('users').doc(userId);
-        const updateData: any = {
-            updatedAt: new Date().toISOString()
-        };
-        if (name !== undefined) updateData.name = name;
-        if (phone !== undefined) updateData.phone = phone;
-        if (address !== undefined) updateData.address = address;
-        if (image !== undefined) updateData.image = image;
+        const userRef = db.collection('users').doc(userId);
+        await userRef.set({
+            ...body,
+            updatedAt: new Date().toISOString(),
+        }, { merge: true });
 
-        await userRef.update(updateData);
-        const updated = await userRef.get();
-        const userData = updated.data()!;
-
-        return NextResponse.json({
-            success: true,
-            user: {
-                id: updated.id,
-                name: userData.name,
-                email: userData.email,
-                phone: userData.phone,
-                address: userData.address,
-                image: userData.image
-            }
-        });
-    } catch (error: any) {
+        return NextResponse.json({ success: true });
+    } catch (error) {
         console.error('Profile update error:', error);
-        return NextResponse.json(
-            { error: error?.message || 'Internal server error while updating profile' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 }

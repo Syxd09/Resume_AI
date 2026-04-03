@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { checkCredits, deductCredits } from '@/lib/credits';
-import { adminDb } from '@/lib/firebase-admin';
+import { getAdminDb } from '@/lib/firebase-admin';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -13,12 +13,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
         const userId = (session.user as any).id;
+        const db = getAdminDb();
 
         const { id } = await params;
         const { jobDescription } = await req.json();
 
         // Fetch the saved resume
-        const resumeDoc = await adminDb.collection('resumes').doc(id).get();
+        const resumeDoc = await db.collection('resumes').doc(id).get();
         const resume = resumeDoc.data();
 
         if (!resumeDoc.exists || !resume || resume.userId !== userId) {

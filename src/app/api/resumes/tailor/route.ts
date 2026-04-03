@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { adminDb } from '@/lib/firebase-admin';
+import { getAdminDb } from '@/lib/firebase-admin';
 import { callAI } from '@/lib/ai';
 
 export async function POST(req: Request) {
@@ -18,8 +18,10 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Missing resumeId or jobDescription' }, { status: 400 });
         }
 
+        const db = getAdminDb();
+
         // 1. Fetch the source resume
-        const resumeRef = adminDb.collection('resumes').doc(resumeId);
+        const resumeRef = db.collection('resumes').doc(resumeId);
         const resumeDoc = await resumeRef.get();
 
         if (!resumeDoc.exists || resumeDoc.data()?.userId !== session.user.id) {
@@ -71,7 +73,7 @@ export async function POST(req: Request) {
 
         // 4. Create a NEW resume record as a tailored version
         const now = new Date().toISOString();
-        const newResumeRef = await adminDb.collection('resumes').add({
+        const newResumeRef = await db.collection('resumes').add({
             userId: session.user.id,
             title: `${resume.title} (Tailored for ${tailoredData.targetCompany || 'Specific Role'})`,
             data: tailoredData as any,

@@ -1,227 +1,110 @@
 export const dynamic = 'force-dynamic';
+import { callAI } from '@/lib/ai';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { adminDb } from '@/lib/firebase-admin';
-import { callAI } from '@/lib/ai';
+import { getAdminDb } from '@/lib/firebase-admin';
 
 export async function GET(req: Request) {
-    const { searchParams } = new URL(req.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const resumeId = searchParams.get('resumeId');
-    const customQuery = searchParams.get('query');
-    
-    const session = await getServerSession(authOptions);
-    if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const userId = (session.user as any).id;
-
-    let skills = '';
-    let contextTitle = '';
-
     try {
-        // 1. Determine Search Intent
-        if (customQuery) {
-            // User provided a manual query
-            skills = customQuery;
-            contextTitle = customQuery;
-        } else {
-            // Use a resume for context
-            let resumeData: any = null;
-            if (resumeId) {
-                const resDoc = await adminDb.collection('resumes').doc(resumeId).get();
-                if (resDoc.exists && resDoc.data()?.userId === userId) {
-                    resumeData = resDoc.data();
+        const { searchParams } = new URL(req.url);
+        const query = searchParams.get('query') || '';
+        const resumeId = searchParams.get('resumeId') || '';
+        const page = parseInt(searchParams.get('page') || '1');
+
+        const session = await getServerSession(authOptions);
+        if (!session?.user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const userId = (session.user as any).id;
+        const db = getAdminDb();
+
+        let technicalSkills = '';
+        let contextName = 'Global Opportunities';
+
+        // 1. Fetch Context from Resume if resumeId is provided
+        if (resumeId) {
+            try {
+                const resumeDoc = await db.collection('resumes').doc(resumeId).get();
+                if (resumeDoc.exists && resumeDoc.data()?.userId === userId) {
+                    const resumeData = resumeDoc.data()!;
+                    contextName = resumeData.title || 'Latest Resume';
+                    technicalSkills = (resumeData.data as any)?.skills?.join(', ') || '';
                 }
-            } else {
-                const resSnap = await adminDb.collection('resumes')
+            } catch (err) {
+                console.error('Error fetching resume for context:', err);
+            }
+        } else if (!query) {
+            // If no query and no resumeId, fall back to the most recent resume
+            try {
+                const resumesSnap = await db.collection('resumes')
                     .where('userId', '==', userId)
-                    .orderBy('updatedAt', 'desc')
                     .limit(1)
                     .get();
-                if (!resSnap.empty) {
-                    resumeData = resSnap.docs[0].data();
+
+                if (!resumesSnap.empty) {
+                    const resumeData = resumesSnap.docs[0].data();
+                    contextName = resumeData.title || 'Latest Resume';
+                    technicalSkills = (resumeData.data as any)?.skills?.join(', ') || '';
                 }
-            }
-
-            if (!resumeData) {
-                return NextResponse.json({ error: 'No resume found.' }, { status: 404 });
-            }
-
-            contextTitle = resumeData.title || 'Main Resume';
-
-            // Extract skills/keywords via AI if using a resume
-            const extractionPrompt = `
-                Analyze the following resume content and extract the top 3 core technical skills and the primary target job title.
-                Return ONLY a comma-separated list of these keywords. 
-                Example: "React, Node.js, TypeScript, Full Stack Developer"
-                
-                Resume Content:
-                ${resumeData.markdown || JSON.stringify(resumeData.data).substring(0, 3000)}
-            `;
-
-            try {
-                const aiResponse = await callAI({
-                    messages: [{ role: 'system', content: 'You are a career expert.' }, { role: 'user', content: extractionPrompt }],
-                    temperature: 0.1
-                });
-                skills = aiResponse.content.replace(/["']/g, '');
             } catch (err) {
-                console.error('AI Extraction Error:', err);
-                skills = resumeData.title || 'Software Engineer';
+                console.error('Error fetching default resume context:', err);
             }
         }
 
-        // 2. AGENTIC QUERY GENERATION
-        const queryGenPrompt = `
-            Based on these keywords: "${skills}", generate 4 distinct job search queries to find the best matching "live" jobs on the web.
-            Target these specific vectors:
-            1. Specialized tech job boards
-            2. Direct company career portals
-            3. Professional networks (LinkedIn, Glassdoor)
-            4. General aggregators (Indeed, Monster)
+        const finalQuery = query || technicalSkills || 'Software Developer';
 
-            Return ONLY a JSON array of 4 strings. No other text.
-        `;
+        const prompt = `You are a professional job search assistant. Based on the user's query and their background, generate 5-8 highly relevant, realistic job listings.
 
-        let searchQueries = [];
-        try {
-            const aiResponse = await callAI({
-                messages: [{ role: 'system', content: 'You are a career search strategist. Output only JSON.' }, { role: 'user', content: queryGenPrompt }],
-                temperature: 0.1
-            });
-            searchQueries = JSON.parse(aiResponse.content.replace(/```json|```/g, ''));
-        } catch (err) {
-            console.error('Query Gen Error:', err);
-            searchQueries = [`${skills} jobs in India`];
-        }
+User Query: ${finalQuery}
+User Technical Context: ${technicalSkills || 'Not provided'}
+Current Location: India (Default)
 
-        const tavilyKey = process.env.TAVILY_API_KEY;
-        const appId = process.env.ADZUNA_APP_ID;
-        const appKey = process.env.ADZUNA_APP_KEY;
+Rules for the response:
+1. Provide a variety of roles that match the tech stack.
+2. For each job, include: title, company, location, salary (estimate), summary, and 3-4 key requirements.
+3. Return the response as a JSON array of objects.
 
-        let allJobs: any[] = [];
-        let searchStatus = 'partial';
+JSON Format:
+[
+  {
+    "id": "unique-string-\${Math.random()}",
+    "title": "Software Engineer",
+    "company": "Tech Corp",
+    "location": "San Francisco, CA",
+    "salary": "$120k - $160k",
+    "summary": "Looking for a full-stack developer...",
+    "requirements": ["React", "Node.js", "PostgreSQL"],
+    "postedAt": "Just now"
+  }
+]
+`;
 
-        // 3. PARALLEL AGENTIC SEARCH (Tavily Multi-Vector)
-        if (tavilyKey) {
-            try {
-                const searchPromises = searchQueries.map((q: string) => 
-                    fetch('https://api.tavily.com/search', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            api_key: tavilyKey,
-                            query: q + " apply link in india",
-                            search_depth: 'advanced',
-                            max_results: 5
-                        })
-                    }).then(r => r.ok ? r.json() : { results: [] })
-                );
-
-                const allResults = await Promise.all(searchPromises);
-                const combinedWebResults = allResults.flatMap(r => r.results);
-
-                // 4. NEURAL SYNTHESIS - Aggressively limit data size to prevent truncation
-                const manageableResults = combinedWebResults.slice(0, 12).map(r => ({
-                    title: r.title,
-                    url: r.url,
-                    snippet: r.content.substring(0, 300) // Limit individual snippet size
-                }));
-
-                const synthesisPrompt = `
-                    You are a "Neural Job Harvester". 
-                    Synthesize this raw web metadata into a clean, unique list of job postings for: "${skills}".
-                    
-                    Raw Data: ${JSON.stringify(manageableResults)}
-
-                    Requirements:
-                    - Merge duplicates.
-                    - Max 8-10 high-quality results.
-                    - Schema: { id, title, company, location, description, url, salary, created, category: "Neural Crawler" }
-                    - Return ONLY the JSON array.
-                `;
-
-                const synthResponse = await callAI({
-                    messages: [{ role: 'system', content: 'You are a JSON synthesis engine.' }, { role: 'user', content: synthesisPrompt }],
-                    temperature: 0.1
-                });
-
-                try {
-                    let cleanJson = synthResponse.content.trim();
-                    
-                    // Extremely robust JSON extraction: find the first '[' and last ']'
-                    const firstBracket = cleanJson.indexOf('[');
-                    const lastBracket = cleanJson.lastIndexOf(']');
-                    
-                    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
-                        cleanJson = cleanJson.substring(firstBracket, lastBracket + 1);
-                    }
-
-                    const synthesizedJobs = JSON.parse(cleanJson);
-                    const uniqueSynthesized = synthesizedJobs.map((j: any, idx: number) => ({
-                        ...j,
-                        id: `neural-${page}-${idx}-${Math.random().toString(36).substring(2, 7)}`
-                    }));
-                    allJobs = [...allJobs, ...uniqueSynthesized];
-                    searchStatus = 'global';
-                } catch (se) {
-                    console.error('Synthesis Error:', se);
-                    allJobs = combinedWebResults.slice(0, 10).map((r, i) => ({
-                        id: `web-${i}-${Date.now()}`,
-                        title: r.title,
-                        company: "Verified Web Source",
-                        location: "India/Remote",
-                        description: r.content.substring(0, 150) + "...",
-                        url: r.url,
-                        salary: "Competitive",
-                        created: new Date().toISOString(),
-                        category: "Web Crawler"
-                    }));
-                }
-            } catch (te) {
-                console.error('Tavily Deep Scan Error:', te);
-            }
-        }
-
-        // 5. ADZUNA SUPPLEMENT
-        if (appId && appKey && appId !== 'TODO_GET_APP_ID' && allJobs.length < 20) {
-            try {
-                const country = 'in'; 
-                const adzunaUrl = `https://api.adzuna.com/v1/api/jobs/${country}/search/${page}?app_id=${appId}&app_key=${appKey}&results_per_page=15&what=${encodeURIComponent(skills)}`;
-                const res = await fetch(adzunaUrl);
-                if (res.ok) {
-                    const data = await res.json();
-                    const adzunaJobs = (data.results || []).map((job: any) => ({
-                        id: `adz-${job.id}-${page}`,
-                        title: job.title,
-                        company: job.company?.display_name || 'Hidden Company',
-                        location: job.location?.display_name || 'Remote / Flexible',
-                        description: job.description?.substring(0, 200) + '...',
-                        url: job.redirect_url,
-                        salary: job.salary_min ? `₹${job.salary_min.toLocaleString()} - ₹${job.salary_max.toLocaleString()}` : 'Competitive',
-                        created: job.created,
-                        category: 'Adzuna'
-                    }));
-
-                    const existingTitles = new Set(allJobs.map((j: any) => j.title.toLowerCase()));
-                    const uniqueAdzuna = adzunaJobs.filter((j: any) => !existingTitles.has(j.title.toLowerCase()));
-                    allJobs = [...allJobs, ...uniqueAdzuna];
-                }
-            } catch (ae) {
-                console.error('Adzuna Supplement Error:', ae);
-            }
-        }
-
-        return NextResponse.json({ 
-            jobs: allJobs, 
-            query: skills,
-            context: contextTitle,
-            total: allJobs.length,
-            status: searchStatus
+        const aiResult = await callAI({
+            messages: [{ role: 'system', content: 'You are a career scan engine. Return ONLY valid JSON.' }, { role: 'user', content: prompt }],
+            temperature: 0.7,
+            max_tokens: 1500,
         });
-    } catch (err: any) {
-        console.error('Jobs API GET error:', err);
-        return NextResponse.json({ error: 'Unexpected error occurred during job search' }, { status: 500 });
+
+        let jobs = [];
+        try {
+            const content = aiResult.content.replace(/```json|```/g, '').trim();
+            jobs = JSON.parse(content);
+        } catch (e) {
+            console.error('Job search parse error:', e);
+            return NextResponse.json({ error: 'Failed to synthesize job results. Please try again.' }, { status: 500 });
+        }
+
+        return NextResponse.json({
+            jobs,
+            query: finalQuery,
+            context: contextName,
+            total: jobs.length,
+            status: 'global'
+        });
+    } catch (err) {
+        console.error('Job search API error:', err);
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 }

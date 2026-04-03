@@ -1,4 +1,5 @@
-import { adminDb } from '@/lib/firebase-admin';
+export const dynamic = 'force-dynamic';
+import { getAdminDb } from '@/lib/firebase-admin';
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import ReactMarkdown from 'react-markdown';
@@ -11,11 +12,14 @@ interface Props {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { id } = await params;
   try {
-    const resumeDoc = await adminDb.collection('resumes').doc(id).get();
+    const { id } = await params;
+    const db = getAdminDb();
+    const resumeDoc = await db.collection('resumes').doc(id).get();
+    
     if (!resumeDoc.exists) return { title: 'Resume Not Found' };
     const resume = resumeDoc.data();
+    
     return {
       title: resume ? `${resume.title} — SATURN AI` : 'Resume Not Found',
       description: resume ? `View ${resume.title} on SATURN AI` : 'This resume could not be found.',
@@ -26,7 +30,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 function RenderResume({ data, markdown }: { data: any; markdown: string | null }) {
-  if (data && typeof data === 'object' && data.personal) {
+  if (data && typeof data === 'object' && data.personalInfo) {
     const template = data.template || 'professional';
     switch (template) {
       case 'modern': return <ModernTemplate data={data} />;
@@ -37,14 +41,15 @@ function RenderResume({ data, markdown }: { data: any; markdown: string | null }
   if (markdown) {
     return <ReactMarkdown>{markdown}</ReactMarkdown>;
   }
-  return <p>This resume could not be rendered.</p>;
+  return <p className="text-zinc-400">This resume could not be rendered.</p>;
 }
 
 export default async function PublicResumePage({ params }: Props) {
-  const { id } = await params;
-
   try {
-    const resumeDoc = await adminDb.collection('resumes').doc(id).get();
+    const { id } = await params;
+    const db = getAdminDb();
+    
+    const resumeDoc = await db.collection('resumes').doc(id).get();
     if (!resumeDoc.exists) notFound();
 
     const resumeData = resumeDoc.data()!;
@@ -52,7 +57,7 @@ export default async function PublicResumePage({ params }: Props) {
     // Fetch user name
     let userName = 'Anonymous';
     if (resumeData.userId) {
-        const userDoc = await adminDb.collection('users').doc(resumeData.userId).get();
+        const userDoc = await db.collection('users').doc(resumeData.userId).get();
         if (userDoc.exists) {
             userName = userDoc.data()?.name || 'Anonymous';
         }
@@ -66,7 +71,7 @@ export default async function PublicResumePage({ params }: Props) {
         <div className="public-resume-page">
           <div className="public-resume-header">
             <h1>{resumeData.title}</h1>
-            <p>
+            <p className="text-zinc-400">
               {`By ${userName}`} ·{' '}
               {new Date(resumeData.createdAt).toLocaleDateString('en-US', {
                 year: 'numeric',
@@ -79,7 +84,7 @@ export default async function PublicResumePage({ params }: Props) {
             <RenderResume data={resumeData.data} markdown={resumeData.markdown} />
           </div>
           <div className="public-resume-footer">
-            <p>
+            <p className="text-zinc-500">
               Generated with ✨{' '}
               <a href="/" style={{ color: 'var(--primary)', fontWeight: 600 }}>
                 SATURN AI
@@ -89,6 +94,7 @@ export default async function PublicResumePage({ params }: Props) {
         </div>
     );
   } catch (err) {
+      console.error('Error rendering shared resume:', err);
       notFound();
   }
 }

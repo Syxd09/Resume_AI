@@ -1,73 +1,67 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { getAdminAuth, getAdminDb } from '@/lib/firebase-admin';
 import bcrypt from 'bcryptjs';
 
 export async function POST(req: Request) {
     try {
-        const { name, email: rawEmail, password } = await req.json();
-        const email = rawEmail?.toLowerCase().trim();
+        const { email, password, name } = await req.json();
 
-        if (!email || !password || password.length < 6) {
-            return NextResponse.json({ error: 'Valid email and password (min 6 chars) are required.' }, { status: 400 });
+        if (!email || !password) {
+            return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
         }
 
-        // 1. Check if user already exists in Firebase Auth
-        try {
-            await adminAuth.getUserByEmail(email);
-            return NextResponse.json({ error: 'An account with this email already exists.' }, { status: 409 });
-        } catch (authErr: any) {
-            // Error means user doesn't exist, which is what we want
-            if (authErr.code !== 'auth/user-not-found') {
-                throw authErr;
-            }
-        }
+        const auth = getAdminAuth();
+        const db = getAdminDb();
 
-        // 2. Create user in Firebase Auth
-        const hashedPassword = await bcrypt.hash(password, 12);
-        const userRecord = await adminAuth.createUser({
+        // 1. Create user in Firebase Auth
+        const userRecord = await auth.createUser({
             email,
-            password, // Firebase handles its own hashing, but we can store the bcrypt one in DB if needed. 
-                      // Actually, if using Firebase Auth, we don't need bcrypt here, 
-                      // but let's keep the user's password in Firestore for compatibility if they were using it.
+            password,
             displayName: name || email.split('@')[0],
         });
 
-        const uid = userRecord.uid;
+        // 2. Hash password for local Firestore storage (optional, for manual verification)
+        const hashedPassword = await bcrypt.hash(password, 12);
 
-        // 3. Create Firestore records atomically
-        await adminDb.runTransaction(async (transaction) => {
-            const userRef = adminDb.collection('users').doc(uid);
-            const transRef = adminDb.collection('transactions').doc();
-
-            const userData = {
-                id: uid,
-                name: name || email.split('@')[0],
+        // 3. Initialize user document in Firestore with welcome credits
+        const userRef = db.collection('users').doc(userRecord.uid);
+        
+        await db.runTransaction(async (transaction) => {
+            transaction.set(userRef, {
+                id: userRecord.uid,
                 email,
-                password: hashedPassword, // Store hash for custom server-side verification
-                credits: 10,
+                name: name || email.split('@')[0],
+                password: hashedPassword, // Stored for manual verification if needed
+                credits: 10, // Initial welcome credits
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
-            };
+            });
 
-            const bonusTransaction = {
-                userId: uid,
+            // Log the "Welcome Bonus" transaction
+            const transRef = db.collection('transactions').doc();
+            transaction.set(transRef, {
+                userId: userRecord.uid,
                 amount: 10,
                 type: 'BONUS',
-                description: 'Welcome bonus — 10 free credits on signup',
+                description: 'Welcome Bonus',
                 createdAt: new Date().toISOString(),
-            };
-
-            transaction.set(userRef, userData);
-            transaction.set(transRef, bonusTransaction);
+            });
         });
 
-        return NextResponse.json({
-            success: true,
-            user: { id: uid, name: name || email.split('@')[0], email, credits: 10 },
+        return NextResponse.json({ 
+            success: true, 
+            userId: userRecord.uid,
+            message: 'User registered successfully with 10 welcome credits.' 
         });
-    } catch (err: any) {
-        console.error('[Register] Registration error:', err);
-        return NextResponse.json({ error: 'Registration failed. Please try again.' }, { status: 500 });
+
+    } catch (error: any) {
+        console.error('Registration error:', error);
+        
+        if (error.code === 'auth/email-already-exists') {
+            return NextResponse.json({ error: 'Email already exists' }, { status: 400 });
+        }
+        
+        return NextResponse.json({ error: error.message || 'Internal server error during registration' }, { status: 500 });
     }
 }

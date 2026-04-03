@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { adminDb } from '@/lib/firebase-admin';
+import { getAdminDb } from '@/lib/firebase-admin';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const session: any = await getServerSession(authOptions);
@@ -14,8 +14,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const userId = session.user.id;
 
     try {
+        const db = getAdminDb();
         // Fetch the saved resume
-        const resumeDoc = await adminDb.collection('resumes').doc(id).get();
+        const resumeDoc = await db.collection('resumes').doc(id).get();
         const resume = resumeDoc.data();
 
         if (!resumeDoc.exists || !resume || resume.userId !== userId) {

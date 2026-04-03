@@ -3,9 +3,7 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import GitHubProvider from 'next-auth/providers/github';
 import LinkedInProvider from 'next-auth/providers/linkedin';
-import { adminAuth, adminDb } from '@/lib/firebase-admin';
-import { cookies } from 'next/headers';
-import { decode } from 'next-auth/jwt';
+import { getAdminAuth, getAdminDb } from '@/lib/firebase-admin';
 
 const providers: NextAuthOptions['providers'] = [
     CredentialsProvider({
@@ -21,7 +19,10 @@ const providers: NextAuthOptions['providers'] = [
 
             try {
                 console.log('[Auth] Verifying Firebase ID Token...');
-                const decodedToken = await adminAuth.verifyIdToken(credentials.idToken);
+                const auth = getAdminAuth();
+                const db = getAdminDb();
+
+                const decodedToken = await auth.verifyIdToken(credentials.idToken);
                 if (!decodedToken) {
                     console.error('[Auth] verifyIdToken returned null');
                     return null;
@@ -37,7 +38,7 @@ const providers: NextAuthOptions['providers'] = [
 
                 try {
                     console.log('[Auth] Syncing user to Firestore:', email);
-                    const userRef = adminDb.collection('users').doc(uid);
+                    const userRef = db.collection('users').doc(uid);
                     const userDoc = await userRef.get();
 
                     let userData;
@@ -99,7 +100,8 @@ export const authOptions: NextAuthOptions = {
             // Silently synchronize user to Firestore if signing in via non-credentials provider
             if (account && account.provider !== 'credentials' && user.email) {
                 try {
-                    const userRef = adminDb.collection('users').doc(user.id);
+                    const db = getAdminDb();
+                    const userRef = db.collection('users').doc(user.id);
                     const userDoc = await userRef.get();
                     if (!userDoc.exists) {
                         await userRef.set({
@@ -131,7 +133,8 @@ export const authOptions: NextAuthOptions = {
 
                 try {
                     // Fetch latest user details from Firestore
-                    const userDoc = await adminDb.collection('users').doc(token.id as string).get();
+                    const db = getAdminDb();
+                    const userDoc = await db.collection('users').doc(token.id as string).get();
                     if (userDoc.exists) {
                         const dbUser = userDoc.data();
                         (session.user as any).credits = dbUser?.credits ?? 0;
