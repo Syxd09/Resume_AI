@@ -1,5 +1,6 @@
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import bcrypt from 'bcryptjs';
 
 export async function POST(req: Request) {
@@ -11,43 +12,61 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Valid email and password (min 6 chars) are required.' }, { status: 400 });
         }
 
-        // Use a transaction to ensure both user and signup bonus are created or none
-        const result = await prisma.$transaction(async (tx) => {
-            const existing = await tx.user.findUnique({ where: { email } });
-            if (existing) {
-                throw new Error('ALREADY_EXISTS');
+        // 1. Check if user already exists in Firebase Auth
+        try {
+            await adminAuth.getUserByEmail(email);
+            return NextResponse.json({ error: 'An account with this email already exists.' }, { status: 409 });
+        } catch (authErr: any) {
+            // Error means user doesn't exist, which is what we want
+            if (authErr.code !== 'auth/user-not-found') {
+                throw authErr;
             }
+        }
 
-            const hashedPassword = await bcrypt.hash(password, 12);
-            const user = await tx.user.create({
-                data: {
-                    name: name || email.split('@')[0],
-                    email,
-                    password: hashedPassword,
-                    credits: 10,
-                },
-            });
+        // 2. Create user in Firebase Auth
+        const hashedPassword = await bcrypt.hash(password, 12);
+        const userRecord = await adminAuth.createUser({
+            email,
+            password, // Firebase handles its own hashing, but we can store the bcrypt one in DB if needed. 
+                      // Actually, if using Firebase Auth, we don't need bcrypt here, 
+                      // but let's keep the user's password in Firestore for compatibility if they were using it.
+            displayName: name || email.split('@')[0],
+        });
 
-            await tx.transaction.create({
-                data: {
-                    userId: user.id,
-                    amount: 10,
-                    type: 'BONUS',
-                    description: 'Welcome bonus — 10 free credits on signup',
-                },
-            });
+        const uid = userRecord.uid;
 
-            return user;
+        // 3. Create Firestore records atomically
+        await adminDb.runTransaction(async (transaction) => {
+            const userRef = adminDb.collection('users').doc(uid);
+            const transRef = adminDb.collection('transactions').doc();
+
+            const userData = {
+                id: uid,
+                name: name || email.split('@')[0],
+                email,
+                password: hashedPassword, // Store hash for custom server-side verification
+                credits: 10,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+            };
+
+            const bonusTransaction = {
+                userId: uid,
+                amount: 10,
+                type: 'BONUS',
+                description: 'Welcome bonus — 10 free credits on signup',
+                createdAt: new Date().toISOString(),
+            };
+
+            transaction.set(userRef, userData);
+            transaction.set(transRef, bonusTransaction);
         });
 
         return NextResponse.json({
             success: true,
-            user: { id: result.id, name: result.name, email: result.email, credits: result.credits },
+            user: { id: uid, name: name || email.split('@')[0], email, credits: 10 },
         });
     } catch (err: any) {
-        if (err.message === 'ALREADY_EXISTS') {
-            return NextResponse.json({ error: 'An account with this email already exists.' }, { status: 409 });
-        }
         console.error('[Register] Registration error:', err);
         return NextResponse.json({ error: 'Registration failed. Please try again.' }, { status: 500 });
     }

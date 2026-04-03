@@ -1,8 +1,8 @@
-
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import prisma from '@/lib/prisma';
+import { adminDb } from '@/lib/firebase-admin';
 import { callAI } from '@/lib/ai';
 
 export async function POST(req: Request) {
@@ -19,13 +19,14 @@ export async function POST(req: Request) {
         }
 
         // 1. Fetch the source resume
-        const resume = await prisma.resume.findUnique({
-            where: { id: resumeId, userId: session.user.id },
-        });
+        const resumeRef = adminDb.collection('resumes').doc(resumeId);
+        const resumeDoc = await resumeRef.get();
 
-        if (!resume) {
+        if (!resumeDoc.exists || resumeDoc.data()?.userId !== session.user.id) {
             return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
         }
+
+        const resume = resumeDoc.data()!;
 
         // 2. Preparation: Extract existing narrative
         const currentData = resume.data as any;
@@ -69,17 +70,18 @@ export async function POST(req: Request) {
         }
 
         // 4. Create a NEW resume record as a tailored version
-        const newResume = await prisma.resume.create({
-            data: {
-                userId: session.user.id,
-                title: `${resume.title} (Tailored for ${tailoredData.targetCompany || 'Specific Role'})`,
-                data: tailoredData as any,
-            }
+        const now = new Date().toISOString();
+        const newResumeRef = await adminDb.collection('resumes').add({
+            userId: session.user.id,
+            title: `${resume.title} (Tailored for ${tailoredData.targetCompany || 'Specific Role'})`,
+            data: tailoredData as any,
+            createdAt: now,
+            updatedAt: now,
         });
 
         return NextResponse.json({ 
             success: true, 
-            resumeId: newResume.id,
+            resumeId: newResumeRef.id,
             preview: tailoredData 
         });
 

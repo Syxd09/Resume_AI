@@ -1,9 +1,10 @@
+export const dynamic = 'force-dynamic';
 import { callAI } from '@/lib/ai';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { checkCredits, deductCredits } from '@/lib/credits';
-import prisma from '@/lib/prisma';
+import { adminDb } from '@/lib/firebase-admin';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -17,12 +18,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const { jobDescription } = await req.json();
 
         // Fetch the saved resume
-        const resume = await prisma.resume.findFirst({
-            where: { id, userId },
-            select: { data: true, title: true },
-        });
+        const resumeDoc = await adminDb.collection('resumes').doc(id).get();
+        const resume = resumeDoc.data();
 
-        if (!resume) {
+        if (!resumeDoc.exists || !resume || resume.userId !== userId) {
             return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
         }
 

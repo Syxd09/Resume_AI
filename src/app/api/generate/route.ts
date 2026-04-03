@@ -1,9 +1,10 @@
+export const dynamic = 'force-dynamic';
 import { callAI, callAIStream } from '@/lib/ai';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { deductCredits, checkCredits } from '@/lib/credits';
-import { prisma } from '@/lib/prisma';
+import { adminDb } from '@/lib/firebase-admin';
 
 export async function POST(req: Request) {
     try {
@@ -212,24 +213,26 @@ Return ONLY valid JSON. Nothing else.`;
             });
         }
 
-        let dbRes;
+        let resumeId = null;
         try {
             await deductCredits(userId, 'GENERATE_RESUME', 'Generated ATS resume');
 
-            dbRes = await prisma.resume.create({
-                data: {
-                    userId,
-                    title: `${targetRole} Resume`,
-                    data: finalResumeData,
-                }
+            const now = new Date().toISOString();
+            const resumeRef = await adminDb.collection('resumes').add({
+                userId,
+                title: `${targetRole} Resume`,
+                data: finalResumeData,
+                createdAt: now,
+                updatedAt: now,
             });
+            resumeId = resumeRef.id;
         } catch (dbErr) {
             console.error('Failed to save tailored resume or deduct credits:', dbErr);
         }
 
         return NextResponse.json({
             data: finalResumeData,
-            resumeId: dbRes?.id || null
+            resumeId: resumeId
         });
     } catch (error) {
         console.error('Generate API error:', error);

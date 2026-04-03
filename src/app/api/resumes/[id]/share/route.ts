@@ -1,7 +1,8 @@
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import prisma from '@/lib/prisma';
+import { adminDb } from '@/lib/firebase-admin';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const session: any = await getServerSession(authOptions);
@@ -10,17 +11,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
 
     const { id } = await params;
+    const userId = session.user.id;
 
-    const resume = await prisma.resume.findFirst({
-        where: { id, userId: session.user.id },
-        select: { id: true },
-    });
+    try {
+        // Fetch the saved resume
+        const resumeDoc = await adminDb.collection('resumes').doc(id).get();
+        const resume = resumeDoc.data();
 
-    if (!resume) {
-        return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
+        if (!resumeDoc.exists || !resume || resume.userId !== userId) {
+            return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
+        }
+
+        const shareUrl = `${process.env.NEXTAUTH_URL}/r/${id}`;
+
+        return NextResponse.json({ shareUrl });
+    } catch (err: any) {
+        console.error('[API Share] GET Error:', err);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
-
-    const shareUrl = `${process.env.NEXTAUTH_URL}/r/${resume.id}`;
-
-    return NextResponse.json({ shareUrl });
 }

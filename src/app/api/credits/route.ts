@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getUserCredits } from '@/lib/credits';
 import { getServerSession } from 'next-auth';
