@@ -25,7 +25,7 @@ export default function Header() {
   if (pathname?.startsWith('/auth')) return null;
 
   return (
-    <header className="fixed top-0 z-[100] w-full border-b border-white/5 bg-background/40 backdrop-blur-2xl transition-all duration-300">
+    <header className="app-header fixed top-0 z-[100] w-full border-b border-white/5 bg-background/40 backdrop-blur-2xl transition-all duration-300">
       <div className="container mx-auto flex h-20 items-center justify-between px-6 md:px-10">
         <Link href="/" className="flex items-center gap-6 transition-all hover:scale-105 group relative">
           <div className="relative flex h-16 w-16 items-center justify-center">

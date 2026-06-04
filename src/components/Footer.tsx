@@ -9,7 +9,7 @@ export default function Footer() {
   if (pathname?.startsWith('/auth')) return null;
 
   return (
-    <footer className="w-full border-t bg-background/80 py-12 backdrop-blur-md">
+    <footer className="app-footer w-full border-t bg-background/80 py-12 backdrop-blur-md">
       <div className="container mx-auto px-6 md:px-8">
         <div className="grid grid-cols-1 gap-12 md:grid-cols-4 lg:gap-16">
           {/* Brand Column */}
