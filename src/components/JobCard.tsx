@@ -36,6 +36,12 @@ export default function JobCard({ job }: JobCardProps) {
         }
     }, [job.created]);
 
+    const applyUrl = React.useMemo(() => {
+        if (job.url && job.url !== '#') return job.url;
+        const searchQuery = `${job.title} ${job.company} ${job.location || ''}`.trim();
+        return `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(searchQuery)}`;
+    }, [job.url, job.title, job.company, job.location]);
+
     return (
         <Card className="group relative flex flex-col h-full overflow-hidden border-white/5 bg-zinc-950/40 backdrop-blur-xl transition-all duration-500 hover:border-primary/40 hover:shadow-[0_0_80px_rgba(var(--primary-rgb),0.2)] ring-1 ring-white/5 rounded-[2.5rem]">
             {/* Background Gradient Detail */}
@@ -113,14 +119,14 @@ export default function JobCard({ job }: JobCardProps) {
                             </span>
                         </Button>
 
-                        <a href={job.url} target="_blank" rel="noopener noreferrer" className="flex-1">
-                            <Button className="w-full h-11 px-4 bg-primary hover:bg-white text-black font-black uppercase tracking-[0.1em] text-[0.6rem] rounded-full transition-all shadow-[0_0_30px_rgba(var(--primary-rgb),0.3)] hover:shadow-primary/50 group/btn">
+                        <Button asChild className="flex-1 h-11 px-4 bg-primary hover:bg-white text-black font-black uppercase tracking-[0.1em] text-[0.6rem] rounded-full transition-all shadow-[0_0_30px_rgba(var(--primary-rgb),0.3)] hover:shadow-primary/50 group/btn">
+                            <a href={applyUrl} target="_blank" rel="noopener noreferrer">
                                 <span className="flex items-center gap-1.5 whitespace-nowrap">
                                     Apply Now
                                     <ExternalLink size={14} className="group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 transition-transform" />
                                 </span>
-                            </Button>
-                        </a>
+                            </a>
+                        </Button>
                     </div>
                 </div>
             </div>
