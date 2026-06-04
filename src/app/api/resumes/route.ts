@@ -12,6 +12,10 @@ export async function GET() {
         }
 
         const userId = (session.user as any).id;
+        if (!userId) {
+            console.error('[Resumes GET] Error: session.user.id is undefined');
+            return NextResponse.json({ error: 'User ID not found in session' }, { status: 400 });
+        }
         const db = getAdminDb();
 
         const resumesSnap = await db.collection('resumes')
@@ -42,6 +46,10 @@ export async function POST(req: Request) {
         }
 
         const userId = (session.user as any).id;
+        if (!userId) {
+            console.error('[Resumes POST] Error: session.user.id is undefined');
+            return NextResponse.json({ error: 'User ID not found in session' }, { status: 400 });
+        }
         const body = await req.json();
         const db = getAdminDb();
 

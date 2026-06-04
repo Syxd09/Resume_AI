@@ -122,19 +122,20 @@ export const authOptions: NextAuthOptions = {
         },
         async jwt({ token, user }) {
             if (user) {
-                token.id = user.id;
+                token.id = user.id || token.sub;
                 token.credits = (user as { credits?: number }).credits;
             }
             return token;
         },
         async session({ session, token }) {
             if (session.user) {
-                (session.user as { id?: string }).id = token.id as string;
+                const userId = (token.id || token.sub) as string;
+                (session.user as { id?: string }).id = userId;
 
                 try {
                     // Fetch latest user details from Firestore
                     const db = getAdminDb();
-                    const userDoc = await db.collection('users').doc(token.id as string).get();
+                    const userDoc = await db.collection('users').doc(userId).get();
                     if (userDoc.exists) {
                         const dbUser = userDoc.data();
                         (session.user as any).credits = dbUser?.credits ?? 0;

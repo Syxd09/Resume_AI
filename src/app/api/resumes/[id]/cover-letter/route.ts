@@ -32,10 +32,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return NextResponse.json({ error: `Insufficient credits. Need ${creditCheck.cost}, have ${creditCheck.balance}.` }, { status: 402 });
         }
 
-        const apiKey = process.env.OPENROUTER_API_KEY;
-        if (!apiKey) {
-            return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
-        }
+
 
         const resumeData = resume.data as any;
 

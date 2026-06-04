@@ -34,8 +34,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: `Insufficient credits. Need ${creditCheck.cost}, have ${creditCheck.balance}.` }, { status: 403 });
         }
 
-        const apiKey = process.env.OPENROUTER_API_KEY;
-        if (!apiKey) return NextResponse.json({ error: 'Config error' }, { status: 500 });
+
 
         const prompt = `You are an ATS (Applicant Tracking System) analysis expert. Analyze the resume against the job description.
 

@@ -63,8 +63,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'File appears empty or unreadable.' }, { status: 400 });
         }
 
-        const apiKey = process.env.OPENROUTER_API_KEY;
-        if (!apiKey) return NextResponse.json({ error: 'Server config error' }, { status: 500 });
+
 
         const parsePrompt = `You are a resume parser. Return ONLY valid JSON, no other text.
 

@@ -17,10 +17,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ suggestion: '' });
         }
 
-        const apiKey = process.env.OPENROUTER_API_KEY;
-        if (!apiKey) {
-            return NextResponse.json({ error: 'Server config error' }, { status: 500 });
-        }
+
 
         const contextBlock = `
         ${job_description ? `Target Job Description:\n${job_description}\n` : ''}
