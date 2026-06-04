@@ -15,7 +15,7 @@ export const StarField = () => {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(20,20,30,1),rgba(10,10,15,1))]" />
       
       {/* Stars Layer 1 - Small/Static */}
-      <div className="absolute inset-0 opacity-30 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-screen" />
+      <div className="absolute inset-0 opacity-30 bg-[url('/noise.svg')] mix-blend-screen" />
       
       {/* Animated Stars - Only render on client to avoid hydration mismatch */}
       <div className="absolute inset-0 z-0">

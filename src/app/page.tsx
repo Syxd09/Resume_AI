@@ -31,7 +31,7 @@ export default function LandingPage() {
             <div className="absolute top-1/4 right-[-10%] w-[60vw] h-[60vw] bg-primary/10 blur-[180px] rounded-full animate-pulse" />
             <div className="absolute bottom-[-10%] left-[-5%] w-[50vw] h-[50vw] bg-amber-500/5 blur-[150px] rounded-full" />
             {/* Subtle Grid Overlay */}
-            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-50 contrast-150 pointer-events-none" />
+            <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-20 brightness-50 contrast-150 pointer-events-none" />
         </div>
 
         <div className="container relative z-10 mx-auto text-center space-y-12">

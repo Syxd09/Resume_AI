@@ -63,20 +63,20 @@ Current Location: India (Default)
 
 Rules for the response:
 1. Provide a variety of roles that match the tech stack.
-2. For each job, include: title, company, location, salary (estimate), summary, and 3-4 key requirements.
+2. For each job, include: title, company, location, salary (estimate), description (3-4 sentences summarizing the role and requirements), category (e.g. Frontend, Backend, Fullstack, DevOps, Mobile, AI/ML), and created (date string in ISO format like "2026-06-03T10:00:00.000Z" representing a date in the last few days).
 3. Return the response as a JSON array of objects.
 
 JSON Format:
 [
   {
-    "id": "unique-string-\${Math.random()}",
+    "id": "job-sample-id-1",
     "title": "Software Engineer",
     "company": "Tech Corp",
     "location": "San Francisco, CA",
     "salary": "$120k - $160k",
-    "summary": "Looking for a full-stack developer...",
-    "requirements": ["React", "Node.js", "PostgreSQL"],
-    "postedAt": "Just now"
+    "description": "Looking for a full-stack developer with experience in React and Node.js...",
+    "created": "2026-06-03T10:00:00.000Z",
+    "category": "Fullstack"
   }
 ]
 `;
@@ -87,10 +87,33 @@ JSON Format:
             max_tokens: 1500,
         });
 
-        let jobs = [];
+        let jobs: any[] = [];
         try {
             const content = aiResult.content.replace(/```json|```/g, '').trim();
-            jobs = JSON.parse(content);
+            const rawJobs = JSON.parse(content);
+            if (Array.isArray(rawJobs)) {
+                jobs = rawJobs.map((job: any) => {
+                    const title = job.title || 'Software Developer';
+                    const company = job.company || 'Tech Company';
+                    const location = job.location || 'India';
+                    
+                    // Build a search URL that actually works (e.g. LinkedIn search)
+                    const searchTerms = `${title} ${company} ${location}`.trim();
+                    const url = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(searchTerms)}`;
+                    
+                    return {
+                        id: job.id || `job-${Math.random().toString(36).substring(2, 11)}`,
+                        title,
+                        company,
+                        location,
+                        description: job.description || job.summary || 'Job details and requirements can be found by applying.',
+                        url,
+                        salary: job.salary || 'Competitive',
+                        created: job.created || job.postedAt || new Date().toISOString(),
+                        category: job.category || 'Software Engineering'
+                    };
+                });
+            }
         } catch (e) {
             console.error('Job search parse error:', e);
             return NextResponse.json({ error: 'Failed to synthesize job results. Please try again.' }, { status: 500 });

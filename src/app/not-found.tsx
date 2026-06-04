@@ -32,7 +32,7 @@ export default function NotFound() {
       />
       
       {/* Background Noise/Grain */}
-      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none z-0" />
+      <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-10 pointer-events-none z-0" />
 
       <div className="relative z-10 flex flex-col items-center max-w-2xl px-6">
         <div className="relative w-32 h-32 mb-12 flex items-center justify-center rounded-[2.5rem] bg-primary/10 text-primary border-2 border-primary/20 shadow-[0_0_50px_rgba(var(--primary-rgb),0.2)] animate-in zoom-in duration-700">

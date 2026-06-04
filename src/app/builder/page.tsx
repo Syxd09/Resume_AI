@@ -53,6 +53,13 @@ function BuilderContent() {
     }
   }, [resumeId, status]);
 
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/auth/signin');
+    }
+  }, [status, router]);
+
   if (status === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -61,8 +68,7 @@ function BuilderContent() {
     );
   }
 
-  if (!session) {
-    router.push('/auth/signin');
+  if (status === 'unauthenticated') {
     return null;
   }
 
@@ -141,7 +147,7 @@ function BuilderContent() {
 
       <div className="w-full relative">
         {/* Subtle grid background for the control panel area */}
-        <div className="absolute -inset-10 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none" />
+        <div className="absolute -inset-10 bg-[url('/noise.svg')] opacity-[0.03] pointer-events-none" />
         
         {error && (
         <div className="flex items-center gap-2 p-4 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg max-w-3xl mx-auto mb-6">

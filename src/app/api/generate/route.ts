@@ -8,10 +8,10 @@ import { getAdminDb } from '@/lib/firebase-admin';
 
 export async function POST(req: Request) {
     try {
-        const { personalInfo, experience, education, skills, projects, targetRole } = await req.json();
+        const { personal, experience, education, skills, projects, targetRole } = await req.json();
 
-        if (!personalInfo || !experience || !education || !skills || !projects || !targetRole) {
-            return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
+        if (!personal || !targetRole) {
+            return NextResponse.json({ error: 'Personal info and Target role are required.' }, { status: 400 });
         }
 
         const session = await getServerSession(authOptions);
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
         const prompt = `You are a world-class resume writer and career expert. Create a highly professional, modern, and ATS-optimized resume using the provided details. Use the target role to tailor the tone and keywords.
 
 PERSONAL INFO:
-${JSON.stringify(personalInfo)}
+${JSON.stringify(personal)}
 
 TARGET ROLE:
 ${targetRole}
@@ -99,7 +99,7 @@ JSON Structure:
         // Add additional metadata from inputs
         const finalizedData = {
             ...parsedResumeData,
-            personalInfo,
+            personal,
             targetRole,
         };
 

@@ -107,6 +107,7 @@ export default function AuthPage() {
   };
 
   const handleOAuth = async (providerName: string) => {
+    if (loading) return;
     if (providerName === 'google') {
       setLoading(true);
       try {
@@ -138,7 +139,10 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="relative min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden bg-zinc-950 text-zinc-50">
+    <div 
+      suppressHydrationWarning={true}
+      className="relative min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden bg-zinc-950 text-zinc-50"
+    >
       <div 
         ref={bgRef}
         className="absolute inset-0 z-0 opacity-40 pointer-events-none mix-blend-screen"
